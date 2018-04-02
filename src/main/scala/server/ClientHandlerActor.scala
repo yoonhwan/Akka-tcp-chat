@@ -141,7 +141,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         getCommand(text) match {
           case "quit" => //quit(clientActorName)
           case "identify" => identify(clientActorName, text)
-          case "online" => //online(clientActorName)
+          case "online" => online(clientActorName)
           case _ => send("Unknown command!", serverMessage = true)
         }
       } 
@@ -174,7 +174,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         val clientActorName = self.path.name
         val desiredName = split(1)
 
-        val future = supervisor ? HasIdentifier(clientActorName)
+        val future = supervisor ? HasIdentifier(clientActorName, desiredName)
         val result = Await.result(future, 1 seconds).asInstanceOf[String]
         if(result.length > 0){
           send("There is already an user with this username! [" + result + "]", serverMessage = true)
@@ -195,6 +195,13 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       }
     }
 
+    def online(clientActorName: String): Unit = {
+      val future = supervisor ? GetAllClintIdentifier
+      val result = Await.result(future, 1 seconds).asInstanceOf[String]
+      if(result.length > 0){
+        send("Currently active users: " + result, serverMessage = true)
+      }
+    }
     def send(message: String, serverMessage: Boolean = false) = {
       if (serverMessage) {
         connection ! Write(ByteString("[SERVER]: " + message), Ack)
