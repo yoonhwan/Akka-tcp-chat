@@ -8,7 +8,7 @@ import scala.io
 object ServerMain extends App {
 
   val system = ActorSystem("ServerMain")
-  val server = system.actorOf(Props(new ServerActor(system)))
+  val server = system.actorOf(Props(new ServerActor(system)), "server-actor")
   val bufferedReader = io.Source.stdin.bufferedReader()
   loop("")
 
@@ -19,7 +19,7 @@ object ServerMain extends App {
       false
     case _ =>
       val msg = bufferedReader.readLine()
-    //   clientConnection ! SendMessage(msg)
+      // server ! SendMessage(msg)
       loop(msg)
   }
 }
