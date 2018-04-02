@@ -5,8 +5,9 @@ object ClientHandlerSupervisor {
 
     case class GeneratedClientHandlerActor(obj: ActorRef)
     case class DisconnectedClientHandlerActor(actorName: String)
-    case class HasIdentifier(actorName: String)
+    case class HasIdentifier(actorName: String, desireName: String)
     case class SetIdentifier(actorName: String, desireName: String)
+    case object GetAllClintIdentifier
 }
 
 class ClientHandlerSupervisor extends Actor with ActorLogging{
@@ -27,13 +28,27 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
     }
 
     def receive = {
-        case p: Props => sender() ! GeneratedClientHandlerActor(context.actorOf(p))
-        case HasIdentifier(actorName) => {
+        case p: Props => {
+            val actor = context.actorOf(p)
+            sender() ! GeneratedClientHandlerActor(actor)
+            context watch actor
+        }
+        case obj: Terminated => 
+            log.info(obj + " : Terminated")
+
+        case HasIdentifier(actorName, desireName) => {
             log.info("HasIdentifier : " + actorName)
-            if (!ClientIdentities.contains(actorName)) {
-                sender() ! ""
+
+            var hasKey: Boolean = false
+            ClientIdentities.keys.takeWhile(_ => hasKey==false).foreach{ i =>  
+                if(ClientIdentities(i) == desireName)
+                    hasKey = true
+            }
+
+            if (hasKey) {
+                sender() ! desireName
             } else {
-                sender() ! ClientIdentities.get(actorName).get
+                sender() ! ""
             }
         }
         case SetIdentifier(actorname, desirename) => {
@@ -46,6 +61,12 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             log.info("DisconnectedClientHandlerActor : " + actorName)
             if (ClientIdentities.contains(actorName)) 
                 ClientIdentities -= actorName
+        }
+        case GetAllClintIdentifier => {
+            if (ClientIdentities.isEmpty) 
+                sender() ! "nobody (0 users total)."
+            else 
+                sender() ! ClientIdentities.values.reduce(_ + ", " + _) + " (" + ClientIdentities.size + " users total)."
         }
     }
     // override default to kill all children during restart
