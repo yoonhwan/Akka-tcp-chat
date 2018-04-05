@@ -37,14 +37,17 @@ extends Actor with ActorLogging with Buffering{
   }
   def buffer(connection:ActorRef, buf:ByteString): Receive = {
     case Received(data) =>
-      val (pkt, remainder) = getPacket(buf ++ data)
+      val msg = buf ++ ByteString(data.utf8String,"UTF-8")
+      val (pkt, remainder) = getPacket(msg)
         // Do something with your packet
-      pkt.foreach(f=>log.info(f.decodeString("UTF-8")))
+      pkt.foreach(f=>log.info(f.utf8String))
       context become buffer(connection, remainder) 
     case SendMessage(message) =>
+      val msg = ByteString(message,"UTF-8")
       connection ! Write(ByteString.newBuilder
-                                  .putShort(message.length.toShort)
-                                  .result() ++ ByteString(message))
+                .putInt(msg.length.toInt)
+                .result() ++ msg)
+
     case PeerClosed     => 
       log.info("PeerClosed")
     case _: ConnectionClosed =>

@@ -3,12 +3,12 @@ import akka.actor.{Actor, ActorRef, ActorPath, Props, ActorLogging, ActorSystem,
 
 
 object DynamicGroupRouter   {
-    def props(): Props = Props(classOf[DynamicGroupRouter])
+    def props(roomName:String): Props = Props(classOf[DynamicGroupRouter], roomName)
 
     case class AddRouteeActor(actor: ActorRef)
     case class RemoveRouteeActor(actor: ActorRef)
 }
-class DynamicGroupRouter() extends Actor with ActorLogging{
+class DynamicGroupRouter(roomName:String) extends Actor with ActorLogging{
     import ClientHandlerMessages._
     import DynamicGroupRouter._
     val ActiveClients = scala.collection.mutable.HashMap.empty[ActorPath, ActorRef]

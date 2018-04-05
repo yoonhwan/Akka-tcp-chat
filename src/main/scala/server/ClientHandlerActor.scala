@@ -56,9 +56,8 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
           send("from <"+clientActorName+"> user message : " + message, serverMessage)
 
       case Received(data) =>
-        // log.info("Received : " + data)
-
-        val (pkt, remainder) = getPacket(buf ++ data)
+        val msg = buf ++ ByteString(data.utf8String,"UTF-8")
+        val (pkt, remainder) = getPacket(msg)
         // Do something with your packet
         pkt.foreach(f=>ProccessData(f))
         context become writing(remainder) 
@@ -159,7 +158,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     def ProccessData(data: ByteString): Unit = {
       
-      val text = data.decodeString("UTF-8")
+      val text = data.utf8String
       val clientActorName = self.path.name
       if (isCommand(text)) {
         getCommand(text) match {
@@ -245,9 +244,10 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     def makePacket(message: String): ByteString = {
       implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
+      val msg = ByteString(message,"UTF-8")
       ByteString.newBuilder
-                .putShort(message.length.toShort)
-                .result() ++ ByteString(message)
+                .putInt(msg.length.toInt)
+                .result() ++ msg
     }
 
 

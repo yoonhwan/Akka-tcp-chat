@@ -10,6 +10,7 @@ import java.net.InetAddress
 import akka.io.Tcp._
 import chatapp.client.ClientMessage.SendMessage
 import akka.util.{Timeout,ByteString}
+import java.nio.ByteOrder
 import scala.concurrent.Await
 import scala.util.{ Success, Failure }
 import scala.util.Random
@@ -55,10 +56,31 @@ class ChatAppStressTest
       
       var a = 10;
 
-      // do loop execution
+      // println(ByteString("abc"))
+      // println(ByteString("가나다"))
+      // println(ByteString("abc").length)
+      // println(ByteString("가나다").length)
+      // println(ByteString("abc").utf8String)
+      // println(ByteString("가나다").utf8String)
+      // println(ByteString("abc").utf8String.length)
+      // println(ByteString("가나다").utf8String.length)
+
+      implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
+      val msg = ByteString("가나다","UTF-8")
+      val current = ByteString.newBuilder
+      .putInt(msg.length.toInt)
+      .result() ++ msg
+
+      val headerSize = 4
+      val len = current.iterator.getInt
+      val rem = current drop headerSize 
+      val (front, back) = rem.splitAt(len) 
+      println(len)
+      println(front + " : "  + back)
+
       do {
-        println(OneTimeCode(10))
-        clientConnection ! SendMessage(OneTimeCode(1024))
+        var message = ByteString(OneTimeCode(10))
+        clientConnection ! SendMessage(message.utf8String)
         a = a + 1;
       }
       while( true )

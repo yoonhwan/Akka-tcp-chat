@@ -6,7 +6,7 @@ import scala.annotation.tailrec
 
 trait Buffering {
 
-  val MAX_PACKET_LEN: Short = 32767
+  val MAX_PACKET_LEN: Int = 1024*1024*10
 
   /**
    * Extracts complete packets of the specified length, preserving remainder
@@ -18,7 +18,7 @@ trait Buffering {
    */
   def getPacket(data: ByteString): (List[ByteString], ByteString) = {
 
-    val headerSize = 2
+    val headerSize = 4
     implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
   
     @tailrec
@@ -26,7 +26,7 @@ trait Buffering {
       if (current.length < headerSize) {
         (packets.reverse, current)
       } else {
-        val len = current.iterator.getShort
+        val len = current.iterator.getInt
         if (len > MAX_PACKET_LEN || len < 0) throw new RuntimeException(s"Invalid packet length: $len")
         if (current.length < len + headerSize) {
           (packets.reverse, current)
