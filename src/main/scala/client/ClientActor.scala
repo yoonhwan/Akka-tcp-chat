@@ -5,9 +5,10 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorSystem, Kill, Terminated,ActorLogging}
 import akka.io.Tcp._
 import akka.io.{IO, Tcp}
+import java.nio.ByteOrder
 import akka.util.ByteString
 import chatapp.client.ClientMessage.SendMessage
-
+import scala.util.{ Success, Failure }
 /**
   * Created by Niels Bokmans on 30-3-2016.
   */
@@ -15,6 +16,7 @@ class ClientActor(address: InetSocketAddress, actorSystem: ActorSystem) extends 
 
   IO(Tcp)(actorSystem) ! Connect(address)
 
+  implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
   def receive = {
     case CommandFailed(command: Tcp.Command) =>
       log.info("Failed to connect to " + address.toString)
@@ -29,7 +31,10 @@ class ClientActor(address: InetSocketAddress, actorSystem: ActorSystem) extends 
         case Received(data) =>
           log.info(data.decodeString("UTF-8"))
         case SendMessage(message) =>
-          connection ! Write(ByteString(message))
+          connection ! Write(ByteString.newBuilder
+                                      .putShort(message.length.toShort)
+                                      .result() ++ ByteString(message))
+          sender() ! Success(message)
         case PeerClosed     => 
           log.info("PeerClosed")
         case _: ConnectionClosed =>

@@ -6,7 +6,7 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorRef, Props, ActorLogging, ActorSystem, Terminated}
 import akka.io.Tcp._
 import akka.io.{IO, Tcp}
-import akka.util.ByteString
+import akka.util.{ByteString,CompactByteString}
 import scala.concurrent.{Await,Future}
 import scala.concurrent.duration._
 import akka.pattern.ask
@@ -22,7 +22,7 @@ object ClientHandlerActor {
 }
 
 class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: InetSocketAddress)
-  extends Actor with ActorLogging {
+  extends Actor with ActorLogging with Buffering{
 
     import Tcp._
     import ClientHandlerActor._
@@ -45,9 +45,9 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     case object Ack extends Event
     // start out in optimistic write-through mode
-    def receive = writing
+    def receive = writing(CompactByteString())
 
-    def writing: Receive = {   
+    def writing(buf: ByteString): Receive = {   
       case SendMessage(clientActorName, message, serverMessage) =>
         if(serverMessage)
           send(message, serverMessage)
@@ -56,7 +56,12 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
       case Received(data) =>
         // log.info("Received : " + data)
-        ProccessData(data)
+
+        val (pkt, remainder) = getPacket(buf ++ data)
+        // Do something with your packet
+        pkt.foreach(f=>ProccessData(f))
+        context become writing(remainder) 
+
         if(acknowledgeMode)
         {
           buffer(data)
@@ -152,6 +157,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def ProccessData(data: ByteString): Unit = {
+      
       val text = data.decodeString("UTF-8")
       val clientActorName = self.path.name
       if (isCommand(text)) {
