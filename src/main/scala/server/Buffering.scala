@@ -6,7 +6,7 @@ import scala.annotation.tailrec
 
 trait Buffering {
 
-  val MAX_PACKET_LEN: Short = 10000
+  val MAX_PACKET_LEN: Short = 32767
 
   /**
    * Extracts complete packets of the specified length, preserving remainder

@@ -10,6 +10,10 @@ object ClientHandlerSupervisor {
     case class HasIdentifier(actorName: String, desireName: String)
     case class SetIdentifier(actorName: String, desireName: String)
     case object GetAllCleintIdentifier
+
+    case class MakeChatRoom(actorName: String)
+    case class JoinChatRoom(actorName: String)
+    case class GetAllChatRoomInfo()
 }
 
 class ClientHandlerSupervisor extends Actor with ActorLogging{
@@ -22,7 +26,7 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
 
     val ClientIdentities = scala.collection.mutable.HashMap.empty[String, String]
 
-    val router = context.actorOf(DynamicGroupRouter.props(), "router")
+    val globalRouter = context.actorOf(DynamicGroupRouter.props(), "globalRouter")
     override val supervisorStrategy =
     OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
         case _: ArithmeticException      ⇒ Resume
@@ -35,12 +39,12 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         case p: Props => {
             val actor = context.actorOf(p)
             sender() ! GeneratedClientHandlerActor(actor)
-            router ! AddRouteeActor(actor)
+            globalRouter ! AddRouteeActor(actor)
             context watch actor
         }
         case Terminated(obj) => 
             // log.info(obj + " : Terminated")
-            router ! DisconnectedClientHandlerActor(obj)
+            globalRouter ! DisconnectedClientHandlerActor(obj)
 
         case HasIdentifier(actorName, desireName) => {
             // log.info("HasIdentifier : " + actorName)
@@ -66,7 +70,7 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         case DisconnectedClientHandlerActor(obj) => {
             // log.info("DisconnectedClientHandlerActor : " + obj.path.name)
             context.stop(obj)
-            router ! RemoveRouteeActor(obj)
+            globalRouter ! RemoveRouteeActor(obj)
             if (ClientIdentities.contains(obj.path.name)) 
             {
                 self ! SendMessage("", "<" + ClientIdentities.get(obj.path.name).get + "> has left the chatroom.", true)
@@ -80,7 +84,7 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
                 sender() ! ClientIdentities.values.reduce(_ + ", " + _) + " (" + ClientIdentities.size + " users total)."
         }
         case SendMessage(clientActorName, message, serverMessage) =>
-            router ! SendMessage(clientActorName, message, serverMessage)
+            globalRouter ! SendMessage(clientActorName, message, serverMessage)
     }
     // override default to kill all children during restart
     override def preRestart(cause: Throwable, msg: Option[Any]) {}

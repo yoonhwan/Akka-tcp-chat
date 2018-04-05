@@ -6,6 +6,7 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorRef, Props, ActorLogging, ActorSystem, Terminated}
 import akka.io.Tcp._
 import akka.io.{IO, Tcp}
+import java.nio.ByteOrder
 import akka.util.{ByteString,CompactByteString}
 import scala.concurrent.{Await,Future}
 import scala.concurrent.duration._
@@ -229,17 +230,24 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     def send(message: String, serverMessage: Boolean = false) = {
       if(acknowledgeMode) {
         if (serverMessage) {
-          context.actorSelection(connection.path) ? Write(ByteString("[SERVER]: " + message), Ack)
+          context.actorSelection(connection.path) ? Write(makePacket("[SERVER]: " + message), Ack)
         } else {
-          context.actorSelection(connection.path) ? Write(ByteString(message), Ack)
+          context.actorSelection(connection.path) ? Write(makePacket(message), Ack)
         }
       }else {
         if (serverMessage) {
-          context.actorSelection(connection.path) ? Write(ByteString("[SERVER]: " + message))
+          context.actorSelection(connection.path) ? Write(makePacket("[SERVER]: " + message))
         } else {
-          context.actorSelection(connection.path) ? Write(ByteString(message))
+          context.actorSelection(connection.path) ? Write(makePacket(message))
         }
       }
+    }
+
+    def makePacket(message: String): ByteString = {
+      implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
+      ByteString.newBuilder
+                .putShort(message.length.toShort)
+                .result() ++ ByteString(message)
     }
 
 
