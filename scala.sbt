@@ -5,5 +5,7 @@ scalacOptions ++= Seq(
   "-unchecked",
   //"-Xfatal-warnings",
   "-feature",
-  "-language:_"
+  "-language:_",
+  "-Dfile.encoding=UTF-8"
+
 )
