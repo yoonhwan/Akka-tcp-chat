@@ -1,6 +1,7 @@
 package chatapp.server
 
 import java.net.InetSocketAddress
+import java.net.InetAddress
 
 import akka.actor.OneForOneStrategy
 import akka.actor.SupervisorStrategy._
@@ -10,11 +11,12 @@ import akka.io.{IO, Tcp}
 import akka.util.ByteString
 
 class ServerActor(actorSystem: ActorSystem) extends Actor with ActorLogging{
-    val Port = 18573
-    val Server = "localhost"
+    import ClientHandlerMessages._
+    val Port:Int = actorSystem.settings.config.getInt("akka.server.port")
+    val Server:String = actorSystem.settings.config.getString("akka.server.hostname")
     val supervisor = context.actorOf(ClientHandlerSupervisor.props(), "client-handler-supervisor")
       
-    IO(Tcp)(actorSystem) ! Bind(self, new InetSocketAddress(Server, Port))
+    IO(Tcp)(actorSystem) ! Bind(self, new InetSocketAddress(InetAddress.getByName(Server), Port))
     // SO.TcpNoDelay(false)
     def receive: Receive = {
 
@@ -33,9 +35,12 @@ class ServerActor(actorSystem: ActorSystem) extends Actor with ActorLogging{
 
     case _: ConnectionClosed =>
       log.info("connection closed")
-    case obj: Terminated => 
+    case Terminated(obj) => 
       log.info(obj + " : Terminated")
     case _: Unbound =>
       log.info("connection Unbound")
+    
+    case SendMessage(clientActorName, message, serverMessage) =>
+      supervisor ! SendMessage(clientActorName, message, serverMessage)
   }
 }

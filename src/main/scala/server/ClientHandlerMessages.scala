@@ -5,7 +5,7 @@ import akka.actor.{Actor, ActorRef, Props, ActorLogging, ActorSystem, Terminated
   */
 object ClientHandlerMessages {
 
-    case class SendMessage(message: String)
+    case class SendMessage(clientActorName:String, message: String, serverMessage: Boolean)
     
     
 }

@@ -37,7 +37,7 @@
 //       ActiveClients += (sender.path.name -> handler)
 
 //     case SendMessage(clientActorName, clientIdentify, message, serverMessage) =>
-//       val text = data.decodeString("US-ASCII")
+//       val text = data.decodeString("UTF-8")
 //       if (isCommand(text)) {
 //         getCommand(text) match {
 //           // case "quit" => quit(clientActorName)
@@ -137,7 +137,7 @@
 //         // quit(clientActorName)
 //       case Received(data) =>
 //         println("Received : " + data)
-//         val text = data.decodeString("US-ASCII")
+//         val text = data.decodeString("UTF-8")
 //         val clientActorName = self.path.name
 //         if (isCommand(text)) {
 //           getCommand(text) match {

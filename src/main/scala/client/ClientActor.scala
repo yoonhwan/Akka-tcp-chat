@@ -27,7 +27,7 @@ class ClientActor(address: InetSocketAddress, actorSystem: ActorSystem) extends 
       connection ! Register(self)
       context become {
         case Received(data) =>
-          log.info(data.decodeString("US-ASCII"))
+          log.info(data.decodeString("UTF-8"))
         case SendMessage(message) =>
           connection ! Write(ByteString(message))
         case PeerClosed     => 

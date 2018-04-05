@@ -11,7 +11,8 @@ import scala.concurrent.{Await,Future}
 import scala.concurrent.duration._
 import akka.pattern.ask
 import akka.util.Timeout
-
+import scala.concurrent.ExecutionContext.Implicits.global
+import akka.pattern.pipe
         
 object ClientHandlerActor {
 
@@ -31,6 +32,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     implicit val timeout = Timeout(5 seconds)
     val CommandCharacter = "~"
     var Identify = ""
+    val acknowledgeMode = false
 
     override def preStart(): Unit = {
       connection ! Register(self, keepOpenOnPeerClosed = true)
@@ -46,23 +48,38 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     def receive = writing
 
     def writing: Receive = {   
+      case SendMessage(clientActorName, message, serverMessage) =>
+        if(serverMessage)
+          send(message, serverMessage)
+        else if(clientActorName != Identify)
+          send("from <"+clientActorName+"> user message : " + message, serverMessage)
+
       case Received(data) =>
-        log.info("Received : " + data)
-        buffer(data)
+        // log.info("Received : " + data)
         ProccessData(data)
-        context.become({
-          case Received(data) =>  buffer(data)
-          case Ack            =>  acknowledge()
-          case PeerClosed     =>  closing = true
-          case _: ConnectionClosed => closing = true
-        }, discardOld = false)
+        if(acknowledgeMode)
+        {
+          buffer(data)
+          context.become({
+            case Received(data) =>  buffer(data)
+            case Ack            =>  acknowledge()
+            case PeerClosed     =>  closing = true
+            case _: ConnectionClosed => closing = true
+            case SendMessage(clientActorName, message, serverMessage) =>
+              if(serverMessage)
+                send(message, serverMessage)
+              else if(clientActorName != Identify)
+                send("from <"+clientActorName+"> user message : " + message, serverMessage)
+                
+          }, discardOld = false)
+        }
       case PeerClosed     => 
         log.info("PeerClosed")
         stopProc()
       case _: ConnectionClosed =>
-          log.info("connection ConnectionClosed")
-          stopProc()
-      case obj: Terminated => 
+        log.info("connection ConnectionClosed")
+        stopProc()
+      case Terminated(obj) => 
         log.info(obj + " : Terminated")
       case Tcp.Aborted =>
         log.info("connection aborted")
@@ -80,8 +97,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def stopProc(): Unit = {
-      supervisor ! DisconnectedClientHandlerActor(self.path.name)
-      context stop self
+      supervisor ! DisconnectedClientHandlerActor(self)
     }
 
     var storage = Vector.empty[ByteString]
@@ -104,7 +120,8 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
       } else if (stored > highWatermark) {
         log.debug(s"suspending reading")
-        connection ! SuspendReading
+        
+        context.actorSelection(connection.path) ! SuspendReading
         suspended = true
       }
     }
@@ -120,7 +137,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
       if (suspended && stored < lowWatermark) {
         log.debug("resuming reading")
-        connection ! ResumeReading
+        context.actorSelection(connection.path) ! ResumeReading
         suspended = false
       }
 
@@ -135,7 +152,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def ProccessData(data: ByteString): Unit = {
-      val text = data.decodeString("US-ASCII")
+      val text = data.decodeString("UTF-8")
       val clientActorName = self.path.name
       if (isCommand(text)) {
         getCommand(text) match {
@@ -149,7 +166,8 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         if (Identify.length <= 0) {
           send("Please identify yourself using ~identify [name]!", serverMessage = true)
         } else {
-          send("from <"+Identify+"> user message : " + text , serverMessage = true)
+          supervisor ! SendMessage(Identify, text, false)
+          // send("from <"+Identify+"> user message : " + text , serverMessage = true)
           // sendToAll(ClientIdentities.get(clientActorName).get, text)
         }
       }
@@ -196,17 +214,25 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def online(clientActorName: String): Unit = {
-      val future = supervisor ? GetAllClintIdentifier
+      val future = supervisor ? GetAllCleintIdentifier
       val result = Await.result(future, 1 seconds).asInstanceOf[String]
       if(result.length > 0){
         send("Currently active users: " + result, serverMessage = true)
       }
     }
     def send(message: String, serverMessage: Boolean = false) = {
-      if (serverMessage) {
-        connection ! Write(ByteString("[SERVER]: " + message), Ack)
-      } else {
-        connection ! Write(ByteString(message), Ack)
+      if(acknowledgeMode) {
+        if (serverMessage) {
+          context.actorSelection(connection.path) ? Write(ByteString("[SERVER]: " + message), Ack)
+        } else {
+          context.actorSelection(connection.path) ? Write(ByteString(message), Ack)
+        }
+      }else {
+        if (serverMessage) {
+          context.actorSelection(connection.path) ? Write(ByteString("[SERVER]: " + message))
+        } else {
+          context.actorSelection(connection.path) ? Write(ByteString(message))
+        }
       }
     }
 

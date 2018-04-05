@@ -1,7 +1,7 @@
 package chatapp.client
 
 import java.net.InetSocketAddress
-
+import java.net.InetAddress
 import akka.actor.{ActorSystem, Props, PoisonPill}
 import akka.io.Tcp._
 import chatapp.client.ClientMessage.SendMessage
@@ -12,10 +12,11 @@ import scala.io
   */
 object ClientMain extends App {
 
-  val Port = 18573
-
+    
   val system = ActorSystem("ClientMain")
-  val clientConnection = system.actorOf(Props(new ClientActor(new InetSocketAddress("localhost", Port), system)))
+  val Port:Int = system.settings.config.getInt("akka.server.port")
+  val Server:String = system.settings.config.getString("akka.server.hostname")
+  val clientConnection = system.actorOf(Props(new ClientActor(new InetSocketAddress(InetAddress.getByName(Server), Port), system)))
   val bufferedReader = io.Source.stdin.bufferedReader()
   loop("")
 
