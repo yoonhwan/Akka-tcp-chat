@@ -8,7 +8,7 @@ import akka.io.{IO, Tcp}
 import java.nio.ByteOrder
 import akka.util.{ByteString,CompactByteString}
 import chatapp.client.ClientMessage.SendMessage
-import scala.util.{ Success, Failure }
+import scala.util.{Success,Failure}
 import chatapp.server.Buffering
 
 /**

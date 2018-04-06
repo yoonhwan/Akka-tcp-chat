@@ -12,7 +12,7 @@ import chatapp.client.ClientMessage.SendMessage
 import akka.util.{Timeout,ByteString}
 import java.nio.ByteOrder
 import scala.concurrent.Await
-import scala.util.{ Success, Failure }
+import scala.util.{Success,Failure}
 import scala.util.Random
 import java.nio.ByteBuffer
 

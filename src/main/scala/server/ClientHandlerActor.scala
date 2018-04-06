@@ -9,6 +9,7 @@ import akka.io.{IO, Tcp}
 import java.nio.ByteOrder
 import akka.util.{ByteString,CompactByteString}
 import scala.concurrent.{Await,Future}
+import scala.util.{Success,Failure}
 import scala.concurrent.duration._
 import akka.pattern.ask
 import akka.util.Timeout
@@ -19,6 +20,9 @@ object ClientHandlerActor {
 
   def props(supervisor: ActorRef, connection: ActorRef, remote: InetSocketAddress): Props =
     Props(classOf[ClientHandlerActor], supervisor, connection, remote)
+
+  case object GetClientInfomation
+  case class ClientInfomation(userIdentify: String, remote: InetSocketAddress, roomName: String)
 
 }
 
@@ -31,53 +35,22 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     import ClientHandlerSupervisor._
     
     implicit val timeout = Timeout(5 seconds)
-    val CommandCharacter = "~"
-    var Identify = ""
-    val acknowledgeMode = false
+    val CommandCharacter = ":"
+    var userIdentify = ""
+    var roomName = ""
 
     override def preStart(): Unit = {
       connection ! Register(self, keepOpenOnPeerClosed = true)
     }
 
-    send("Please identify yourself using ~identify [name]!", serverMessage = true)
-      
+    send("Please userIdentify yourself using ~identify [name]!", serverMessage = true)
     // sign death pact: this actor terminates when connection breaks
     context watch connection
-
-    case object Ack extends Event
+    
     // start out in optimistic write-through mode
-    def receive = writing(CompactByteString())
+    def receive = common orElse writing(CompactByteString())
 
-    def writing(buf: ByteString): Receive = {   
-      case SendMessage(clientActorName, message, serverMessage) =>
-        if(serverMessage)
-          send(message, serverMessage)
-        else if(clientActorName != Identify)
-          send("from <"+clientActorName+"> user message : " + message, serverMessage)
-
-      case Received(data) =>
-        val msg = buf ++ ByteString(data.utf8String,"UTF-8")
-        val (pkt, remainder) = getPacket(msg)
-        // Do something with your packet
-        pkt.foreach(f=>ProccessData(f))
-        context become writing(remainder) 
-
-        if(acknowledgeMode)
-        {
-          buffer(data)
-          context.become({
-            case Received(data) =>  buffer(data)
-            case Ack            =>  acknowledge()
-            case PeerClosed     =>  closing = true
-            case _: ConnectionClosed => closing = true
-            case SendMessage(clientActorName, message, serverMessage) =>
-              if(serverMessage)
-                send(message, serverMessage)
-              else if(clientActorName != Identify)
-                send("from <"+clientActorName+"> user message : " + message, serverMessage)
-                
-          }, discardOld = false)
-        }
+    def common: Receive = {
       case PeerClosed     => 
         log.info("PeerClosed")
         stopProc()
@@ -95,67 +68,38 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       case _: Unbound =>
         log.info("connection Unbound")
     }
+    
+    def writing(buf: ByteString): Receive = common orElse {   
+      case SendMessage(clientActorName, message, serverMessage) =>
+        if(serverMessage)
+          send(message, serverMessage)
+        else if(clientActorName != userIdentify)
+          send("from <"+clientActorName+"> user message : " + message, serverMessage)
+
+      case Received(data) =>
+        val msg = buf ++ ByteString(data.utf8String,"UTF-8")
+        val (pkt, remainder) = getPacket(msg)
+        // Do something with your packet
+        pkt.foreach(f=>ProccessData(f))
+        context become writing(remainder) 
+
+      case GetClientInfomation =>
+        sender() ! ClientInfomation(userIdentify, remote, roomName)
+
+      case DynamicGroupRouter.DestroyGroupRouter =>
+        roomName = ""
+    }
 
     override def postStop(): Unit = {
       super.postStop()
-      log.info(s"transferred $transferred bytes from/to [$remote]")
+      log.info(s"stoped actor user : $userIdentify from/to [$remote]")
     }
 
     def stopProc(): Unit = {
       supervisor ! DisconnectedClientHandlerActor(self)
     }
 
-    var storage = Vector.empty[ByteString]
-    var stored = 0L
-    var transferred = 0L
-    var closing = false
-
-    val maxStored = 100000000L
-    val highWatermark = maxStored * 5 / 10
-    val lowWatermark = maxStored * 3 / 10
-    var suspended = false
-
-    private def buffer(data: ByteString): Unit = {
-      storage :+= data
-      stored += data.size
-
-      if (stored > maxStored) {
-        log.warning(s"drop connection to [$remote] (buffer overrun)")
-        stopProc()
-
-      } else if (stored > highWatermark) {
-        log.debug(s"suspending reading")
-        
-        context.actorSelection(connection.path) ! SuspendReading
-        suspended = true
-      }
-    }
-
-    private def acknowledge(): Unit = {
-      require(storage.nonEmpty, "storage was empty")
-
-      val size = storage(0).size
-      stored -= size
-      transferred += size
-
-      storage = storage drop 1
-
-      if (suspended && stored < lowWatermark) {
-        log.debug("resuming reading")
-        context.actorSelection(connection.path) ! ResumeReading
-        suspended = false
-      }
-
-      if (storage.isEmpty) {
-        log.info("acknowledge buffer is cleaned!")
-        if (closing) stopProc()
-        else context.unbecome()
-      } else {
-        log.info("acknowledge buffer has delayed data! continue sending data")
-        ProccessData(storage(0))
-      }
-    }
-
+    
     def ProccessData(data: ByteString): Unit = {
       
       val text = data.utf8String
@@ -165,15 +109,19 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
           case "quit" => //quit(clientActorName)
           case "identify" => identify(clientActorName, text)
           case "online" => online(clientActorName)
+          case "chatroom" => chatroom()
+          case "create" => createChatRoom(self, text)
+          case "join" => joinChatRoom(self, text)
+          case "exit" => exitChatRoom(self)
           case _ => send("Unknown command!", serverMessage = true)
         }
       } 
       else {
-        if (Identify.length <= 0) {
-          send("Please identify yourself using ~identify [name]!", serverMessage = true)
+        if (userIdentify.length <= 0) {
+          send("Please userIdentify yourself using ~identify [name]!", serverMessage = true)
         } else {
-          supervisor ! SendMessage(Identify, text, false)
-          // send("from <"+Identify+"> user message : " + text , serverMessage = true)
+          supervisor ! SendMessage(userIdentify, text, false)
+          // send("from <"+userIdentify+"> user message : " + text , serverMessage = true)
           // sendToAll(ClientIdentities.get(clientActorName).get, text)
         }
       }
@@ -198,47 +146,109 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         val clientActorName = self.path.name
         val desiredName = split(1)
 
-        val future = supervisor ? HasIdentifier(clientActorName, desiredName)
-        val result = Await.result(future, 1 seconds).asInstanceOf[String]
-        if(result.length > 0){
-          send("There is already an user with this username! [" + result + "]", serverMessage = true)
-        }else {
-
-          val future_sub = supervisor ? SetIdentifier(clientActorName, desiredName)
-          val result_sub = Await.result(future_sub, 1 seconds).asInstanceOf[String]
-          Identify = result_sub
-          send("Successfully set your identity to " + Identify, serverMessage = true)
+        val future: Future[Any] = supervisor ? HasIdentifier(clientActorName, desiredName)
+        future onComplete {
+          case Success(result) => {
+            val future_sub: Future[Any] = supervisor ? SetIdentifier(clientActorName, desiredName)
+            future_sub onComplete {
+              case Success(result_sub) => {
+                userIdentify = result_sub.asInstanceOf[String]
+                send("Successfully set your identity to " + userIdentify, serverMessage = true)
+              }
+              case Failure(t) => t.printStackTrace
+            }
+          }
+          case Failure(t) => send("There is already an user with this username! [" + desiredName + "]", serverMessage = true)
         }
-        
-        // if (ClientIdentities.values.exists(_ == desiredName)) {
-        //   
-        // } else {
-          // ClientIdentities += (clientActorName -> desiredName)
-          
-        // }
       }
     }
 
     def online(clientActorName: String): Unit = {
-      val future = supervisor ? GetAllCleintIdentifier
-      val result = Await.result(future, 1 seconds).asInstanceOf[String]
-      if(result.length > 0){
-        send("Currently active users: " + result, serverMessage = true)
+      supervisor ? GetAllClientIdentifier() onComplete {
+        case Success(result) => {
+          val message = result.asInstanceOf[String]
+          if(message.length > 0){
+            send("Currently active users: " + message, serverMessage = true)
+          }
+        }
+        case Failure(t) => t.printStackTrace
       }
     }
-    def send(message: String, serverMessage: Boolean = false) = {
-      if(acknowledgeMode) {
-        if (serverMessage) {
-          context.actorSelection(connection.path) ? Write(makePacket("[SERVER]: " + message), Ack)
-        } else {
-          context.actorSelection(connection.path) ? Write(makePacket(message), Ack)
+
+    def chatroom():Unit = {
+      supervisor ? GetAllChatRoomInfo(self) onComplete {
+        case Success(result) => {
+          val message = result.asInstanceOf[String]
+          if(message.length > 0){
+            send("Currently active chatting rooms: " + message, serverMessage = true)
+          }
         }
+        case Failure(t) => 
+          log.info(t.getMessage + "::::" + t.getStackTrace)
+          t.printStackTrace
+      }
+    }
+
+    def createChatRoom(actor:ActorRef, text:String):Unit = {
+      if(roomName.length > 0) {
+        send(s"Already joined chat room : $roomName, if you need create room. exit room first.", serverMessage = true)
       }else {
-        if (serverMessage) {
-          context.actorSelection(connection.path) ? Write(makePacket("[SERVER]: " + message))
-        } else {
-          context.actorSelection(connection.path) ? Write(makePacket(message))
+        val split = text.split(" ")
+        if (split.length == 1) {
+            send("Please enter what chatroom name you would like to create room with!", serverMessage = true)
+        } else{
+          val name = split(1)
+          supervisor ? MakeChatRoom(actor, name) onComplete {
+            case Success(result) => {
+              roomName = result.asInstanceOf[String]
+              if(roomName.length > 0){
+                send(s"Successfully create the chatroom($roomName).", serverMessage = true)
+              }
+            }
+            case Failure(t) => send("There is already an room with this roomname! [" + name + "]", serverMessage = true)
+          }
         }
+      }
+    }
+
+    def joinChatRoom(actor:ActorRef, text:String):Unit = {
+      val split = text.split(" ")
+      if (split.length == 1) {
+        send("Please enter what chatroom name you would like to joinning with!", serverMessage = true)
+      } else{
+        val name = split(1)
+        supervisor ? JoinChatRoom(actor, name) onComplete {
+          case Success(result) => {
+            roomName = result.asInstanceOf[String]
+            if(roomName.length > 0){
+              send(s"Successfully join the chatroom($roomName).", serverMessage = true)
+            }
+          }
+          case Failure(t) => send("There is not exist an room name! [" + name + "]", serverMessage = true)
+        }
+      }
+    }
+
+    def exitChatRoom(actor:ActorRef):Unit = {
+
+      if(roomName.length <= 0) {
+        send(s"Does not joined any room. doesn't joined any rooms", serverMessage = true)
+      }else {
+        supervisor ? ExitChatRoom(actor, roomName) onComplete {
+          case Success(result) => {
+            send(s"Successfully exit the chatroom($roomName).", serverMessage = true)
+            roomName = ""
+          }
+          case Failure(t) => t.printStackTrace
+        }
+      }
+    }
+
+    def send(message: String, serverMessage: Boolean = false) = {
+      if (serverMessage) {
+        context.actorSelection(connection.path) ? Write(makePacket("[SERVER]: " + message))
+      } else {
+        context.actorSelection(connection.path) ? Write(makePacket(message))
       }
     }
 
@@ -249,6 +259,4 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
                 .putInt(msg.length.toInt)
                 .result() ++ msg
     }
-
-
   }
