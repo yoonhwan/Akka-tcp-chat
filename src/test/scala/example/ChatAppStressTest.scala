@@ -66,7 +66,7 @@ class ChatAppStressTest
       // println(ByteString("가나다").utf8String.length)
 
       implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
-      val msg = ByteString("가나다","UTF-8")
+      val msg = ByteString("스트레스","UTF-8")
       val current = ByteString.newBuilder
       .putInt(msg.length.toInt)
       .result() ++ msg
@@ -79,7 +79,7 @@ class ChatAppStressTest
       println(front + " : "  + back)
 
       do {
-        var message = ByteString(OneTimeCode(10))
+        var message = ByteString(OneTimeCode(1024*1024*1))
         clientConnection ! SendMessage(message.utf8String)
         a = a + 1;
       }
