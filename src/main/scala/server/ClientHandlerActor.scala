@@ -38,12 +38,13 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     val CommandCharacter = ":"
     var userIdentify = ""
     var roomName = ""
+    var support_chat_all_users:Boolean = false
 
     override def preStart(): Unit = {
       connection ! Register(self, keepOpenOnPeerClosed = true)
     }
 
-    send("Please userIdentify yourself using ~identify [name]!", serverMessage = true)
+    send("Please userIdentify yourself using <:identify> [name]!", serverMessage = true)
     // sign death pact: this actor terminates when connection breaks
     context watch connection
     
@@ -70,17 +71,27 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
     
     def writing(buf: ByteString): Receive = common orElse {   
-      case SendMessage(clientActorName, message, serverMessage) =>
-        if(serverMessage)
-          send(message, serverMessage)
-        else if(clientActorName != userIdentify)
-          send("from <"+clientActorName+"> user message : " + message, serverMessage)
+      case SendServerMessage(message) => {
+        send(message, true)
+      }
+      case SendAllClientMessage(clientActorName, message) => {
+        if(clientActorName != userIdentify)
+          send(s"from <$clientActorName> user message : $message", false)
+      }
+      case SendRoomClientMessage(roomName, clientActorName, message) => {
+        if(roomName.length <= 0)
+          send("Please create or join room yourself using <:create><:join> [name]! Also you can show all list rooms <:chatroom>", true)
+        else
+          if(clientActorName != userIdentify)
+            send(s"from <$clientActorName> user message at room <$roomName> : $message", false)
+      }
 
       case Received(data) =>
-        val msg = buf ++ ByteString(data.utf8String,"UTF-8")
+        val msg = buf ++ data
         val (pkt, remainder) = getPacket(msg)
         // Do something with your packet
         pkt.foreach(f=>ProccessData(f))
+        // log.info(s"recv message : ${data.utf8String.length} : dc = ${pkt.length} : rc = ${remainder.length}")
         context become writing(remainder) 
 
       case GetClientInfomation =>
@@ -96,6 +107,10 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def stopProc(): Unit = {
+      if(roomName.length>0) {
+        exitChatRoom(self)
+      }
+
       supervisor ! DisconnectedClientHandlerActor(self)
     }
 
@@ -113,16 +128,25 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
           case "create" => createChatRoom(self, text)
           case "join" => joinChatRoom(self, text)
           case "exit" => exitChatRoom(self)
-          case _ => send("Unknown command!", serverMessage = true)
+          case _ => send("Unknown command! if you need show all command. type the command <:help>.", serverMessage = true)
         }
       } 
       else {
         if (userIdentify.length <= 0) {
-          send("Please userIdentify yourself using ~identify [name]!", serverMessage = true)
+          send("Please userIdentify yourself using <:identify> [name]!", serverMessage = true)
         } else {
-          supervisor ! SendMessage(userIdentify, text, false)
-          // send("from <"+userIdentify+"> user message : " + text , serverMessage = true)
-          // sendToAll(ClientIdentities.get(clientActorName).get, text)
+          if(support_chat_all_users)
+          {
+            if(roomName.length <= 0)
+              supervisor ! SendAllClientMessage(userIdentify, text)
+            else
+              supervisor ! SendRoomClientMessage(roomName, userIdentify, text)
+          }else {
+            if(roomName.length <= 0)
+              send("Please create or join room yourself using <:create><:join> [name]! Also you can show all list rooms <:chatroom>", serverMessage = true)
+            else
+              supervisor ! SendRoomClientMessage(roomName, userIdentify, text)
+          }
         }
       }
     }
@@ -154,17 +178,20 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
               case Success(result_sub) => {
                 userIdentify = result_sub.asInstanceOf[String]
                 send("Successfully set your identity to " + userIdentify, serverMessage = true)
+                if(roomName.length>0) {
+                  exitChatRoom(self)
+                }
               }
               case Failure(t) => t.printStackTrace
             }
           }
-          case Failure(t) => send("There is already an user with this username! [" + desiredName + "]", serverMessage = true)
+          case Failure(t) => send(s"There is already an user with this username! [$desiredName] Also you can show all list users <:online>", serverMessage = true)
         }
       }
     }
 
     def online(clientActorName: String): Unit = {
-      supervisor ? GetAllClientIdentifier() onComplete {
+      supervisor ? GetAllClientIdentifier onComplete {
         case Success(result) => {
           val message = result.asInstanceOf[String]
           if(message.length > 0){
@@ -176,7 +203,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def chatroom():Unit = {
-      supervisor ? GetAllChatRoomInfo(self) onComplete {
+      supervisor ? GetAllChatRoomInfo onComplete {
         case Success(result) => {
           val message = result.asInstanceOf[String]
           if(message.length > 0){
@@ -191,7 +218,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     def createChatRoom(actor:ActorRef, text:String):Unit = {
       if(roomName.length > 0) {
-        send(s"Already joined chat room : $roomName, if you need create room. exit room first.", serverMessage = true)
+        send(s"Already joined chat room : $roomName, if you need create room. exit room first.<:exit>", serverMessage = true)
       }else {
         val split = text.split(" ")
         if (split.length == 1) {
@@ -205,7 +232,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
                 send(s"Successfully create the chatroom($roomName).", serverMessage = true)
               }
             }
-            case Failure(t) => send("There is already an room with this roomname! [" + name + "]", serverMessage = true)
+            case Failure(t) => send(s"There is already an room with this roomname! [name]!, if you need join the room use <:join>. Also you can show all list rooms <:chatroom>", serverMessage = true)
           }
         }
       }
@@ -224,7 +251,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
               send(s"Successfully join the chatroom($roomName).", serverMessage = true)
             }
           }
-          case Failure(t) => send("There is not exist an room name! [" + name + "]", serverMessage = true)
+          case Failure(t) => send("There is not exist an room name! Also you can show all list rooms <:chatroom>", serverMessage = true)
         }
       }
     }
@@ -245,7 +272,9 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def send(message: String, serverMessage: Boolean = false) = {
-      if (serverMessage) {
+      if(context==null || connection==null) {
+
+      }else if (serverMessage) {
         context.actorSelection(connection.path) ? Write(makePacket("[SERVER]: " + message))
       } else {
         context.actorSelection(connection.path) ? Write(makePacket(message))
@@ -255,8 +284,11 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     def makePacket(message: String): ByteString = {
       implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
       val msg = ByteString(message,"UTF-8")
-      ByteString.newBuilder
-                .putInt(msg.length.toInt)
-                .result() ++ msg
+      val packet = ByteString.newBuilder
+                              .putInt(msg.length)
+                              .result() ++ msg
+
+      // log.info(s"send message :${packet.length} : ${msg.length.toInt}")
+      packet
     }
   }

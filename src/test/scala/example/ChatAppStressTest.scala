@@ -50,10 +50,10 @@ class ChatAppStressTest
 
       val Port:Int = system.settings.config.getInt("akka.server.port")
       val Server:String = system.settings.config.getString("akka.server.hostname")
-      val clientConnection = system.actorOf(Props(new ClientActor(new InetSocketAddress(InetAddress.getByName(Server), Port), system)))
+      val clientConnection = system.actorOf(Props(new ClientActor(new InetSocketAddress(InetAddress.getByName(Server), Port), system, true)))
       expectNoMsg(2 seconds)
-      clientConnection ! SendMessage("~identify test01")
-      
+      clientConnection ! SendMessage("~identify stress-client-00")
+      clientConnection ! SendMessage("~create stress-room")
       var a = 10;
 
       // println(ByteString("abc"))
@@ -78,12 +78,15 @@ class ChatAppStressTest
       println(len)
       println(front + " : "  + back)
 
-      do {
-        var message = ByteString(OneTimeCode(1024*1024*1))
-        clientConnection ! SendMessage(message.utf8String)
-        a = a + 1;
-      }
-      while( true )
+      // do {
+      //   var message = ByteString(OneTimeCode(1024*1024*1))
+      //   clientConnection ! SendMessage(message.utf8String)
+      //   a = a + 1;
+      // }
+      // while( true )
+
+      var message = ByteString(OneTimeCode(1024*1024*1))
+      system.scheduler.schedule(2 seconds, 200 millis, clientConnection, new SendMessage(message.utf8String))
     }
   }
 }

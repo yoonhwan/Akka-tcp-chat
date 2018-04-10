@@ -32,37 +32,55 @@ class DynamicGroupRouter(roomName:String) extends Actor with ActorLogging{
     def receive :Receive = {
         case AddRouteeActor(actor) => 
             ActiveClients += (actor.path -> actor)
-            
-        case msg : SendMessage => 
+        
+        case server @ SendServerMessage(message) => {
             try {
                 ActiveClients.foreach(f => {
-                    context.actorSelection(f._1) ! msg
+                    context.actorSelection(f._1) ! server
                 })
             } catch {
                 case e:Exception => e.printStackTrace
             }
-            
+        }
+
+        case all @ (clientActorName, message) => {
+            try {
+                ActiveClients.foreach(f => {
+                    context.actorSelection(f._1) ! all
+                })
+            } catch {
+                case e:Exception => e.printStackTrace
+            }
+        }
+        case m @ SendRoomClientMessage(roomName, clientActorName, message) => {
+            try {
+                ActiveClients.foreach(f => {
+                    context.actorSelection(f._1) ! m
+                })
+            } catch {
+                case e:Exception => e.printStackTrace
+            }
+        }
             
         case RemoveRouteeActor(actor) => 
             ActiveClients -= actor.path
 
         case GetAllClientIdentifier => {
             if (ActiveClients.isEmpty) 
-                sender() ! "nobody (0 users total)."
+                sender ! "nobody (0 users total)."
             else {
                 val taskFutures: List[Future[Any]] = ActiveClients.map(f => {
                     context.actorSelection(f._1) ? ClientHandlerActor.GetClientInfomation
                 }).toList
-                val searchFuture: Future[List[Any]] = Future sequence taskFutures
+                val searchFuture: Future[List[Any]] = Util.sequenceList(taskFutures)
                 val result = Await result (searchFuture, 2 seconds)
 
                 var userdataTotal = scala.collection.mutable.ListBuffer[String]()
                 result foreach(value => {
                     val data = value.asInstanceOf[ClientHandlerActor.ClientInfomation]
-                    userdataTotal += s"{userName:${data.userIdentify}}"
+                    userdataTotal += s"${data.userIdentify}"
                 })
-
-                sender() ! userdataTotal.toList.reduce(_ + ", " + _)
+                sender ! userdataTotal.toList.reduce(_ + ", " + _)
             }
         }
 

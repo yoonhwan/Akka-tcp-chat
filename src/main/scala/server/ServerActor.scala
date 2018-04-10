@@ -40,7 +40,10 @@ class ServerActor(actorSystem: ActorSystem) extends Actor with ActorLogging{
     case _: Unbound =>
       log.info("connection Unbound")
     
-    case SendMessage(clientActorName, message, serverMessage) =>
-      supervisor ! SendMessage(clientActorName, message, serverMessage)
+    case SendServerMessage(message) =>
+      supervisor ! SendServerMessage(message)
+
+    case ClientHandlerSupervisor.ClearAllChatRoom =>
+      supervisor ! ClientHandlerSupervisor.ClearAllChatRoom
   }
 }

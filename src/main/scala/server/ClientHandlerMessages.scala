@@ -5,7 +5,9 @@ import akka.actor.{Actor, ActorRef, Props, ActorLogging, ActorSystem, Terminated
   */
 object ClientHandlerMessages {
 
-    case class SendMessage(clientActorName:String, message: String, serverMessage: Boolean)
+    case class SendServerMessage(message: String)
+    case class SendAllClientMessage(clientActorName:String, message: String)
+    case class SendRoomClientMessage(roomName:String, clientActorName:String, message: String)
     
     
 }
