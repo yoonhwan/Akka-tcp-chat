@@ -41,13 +41,12 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     var support_chat_all_users:Boolean = false
 
     override def preStart(): Unit = {
-      connection ! Register(self, keepOpenOnPeerClosed = true)
+      connection ! Register(self)//, keepOpenOnPeerClosed = true)
+      context watch connection
+      // sign death pact: this actor terminates when connection breaks
+      send("Please userIdentify yourself using <:identify> [name]!", serverMessage = true)
     }
 
-    send("Please userIdentify yourself using <:identify> [name]!", serverMessage = true)
-    // sign death pact: this actor terminates when connection breaks
-    context watch connection
-    
     // start out in optimistic write-through mode
     def receive = common orElse writing(CompactByteString())
 

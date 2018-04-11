@@ -43,11 +43,8 @@ class TestActor(address: InetSocketAddress, name:String) extends Actor{
     
     def receive:Receive = {
       case Start => {
-        Thread.sleep(1000)
-        Await result (clientConnection ? SendMessage(s":identify ${name}"), 10 seconds)
-        Thread.sleep(1000)
-        Await result (clientConnection ? SendMessage(":join stress-room"), 10 seconds)
-        Thread.sleep(1000)
+        clientConnection ! SendMessage(s":identify ${name}")
+        clientConnection ! SendMessage(":join stress-room")
       }
       case Finish => {
         clientConnection ! PoisonPill
@@ -55,7 +52,7 @@ class TestActor(address: InetSocketAddress, name:String) extends Actor{
       }
       case Work() =>{
         val bufferedReader = io.Source.stdin.bufferedReader()
-        val byteSize:Int = 100 //1024*1024*1
+        val byteSize:Int = 1 //1024*1024*1
         var message = ByteString(OneTimeCode(byteSize))
         clientConnection ! SendMessage(message.utf8String)
       }

@@ -78,8 +78,10 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             val localsender = sender()
             // log.info("SetIdentifier : [" + actorname + " : " + desirename + "]")
             ClientIdentities += (actorname -> desirename)
+            val myname = getClientname(actorname)
+            if(myname.length > 0)
+                self ! SendServerMessage(s"<${myname}> has joined the <global> chatroom.")
             localsender ! desirename
-            self ! SendServerMessage(s"<${ClientIdentities.get(actorname).get}> has joined the <global> chatroom.")
         }
         case DisconnectedClientHandlerActor(obj) => {
             // log.info("DisconnectedClientHandlerActor : " + obj.path.name)
@@ -87,8 +89,9 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             globalRoom ! RemoveRouteeActor(obj)
             if (ClientIdentities.contains(obj.path.name)) 
             {
-                val actorname = ClientIdentities.get(obj.path.name).get
-                self ! SendServerMessage(s"<${actorname}> has left the <global> chatroom. exit chat")
+                val actorname = getClientname(obj.path.name)
+                if(actorname.length > 0)
+                    self ! SendServerMessage(s"<${actorname}> has left the <global> chatroom. exit chat")
                 ClientIdentities -= obj.path.name
             }       
         }
@@ -159,8 +162,9 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             {
                 joinTheRoom(actor,roomName)
                 sender ! roomName
-                val actorname = ClientIdentities.get(actor.path.name).get
-                self ! SendServerMessage(s"<${actorname}> has joined the <$roomName> chatroom.")
+                val actorname = getClientname(actor.path.name)
+                if(actorname.length > 0)
+                    self ! SendServerMessage(s"<${actorname}> has joined the <$roomName> chatroom.")
 
             }else
                 localsender ! akka.actor.Status.Failure(new Exception("not exist room error"))
@@ -169,7 +173,7 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         case ExitChatRoom(actor, roomName) => {
             val localsender = sender()
             val room:ActorRef = getActiveRoom(roomName)
-            val actorname = ClientIdentities.get(actor.path.name).get
+            val actorname = getClientname(actor.path.name)
             if(room != null)
             {
                 room ? GetRoomUserCount onComplete {
@@ -178,7 +182,8 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
                         removeActiveRoomAndDestroy(actor, roomName, count)
                         localsender ! s"Successfully exit the chatroom($roomName) remain user count : ${count-1}."
 
-                        self ! SendServerMessage(s"<${actorname}> has left the <$roomName> chatroom. exit chat")
+                        if(actorname.length > 0)
+                            self ! SendServerMessage(s"<${actorname}> has left the <$roomName> chatroom. exit chat")
                 
                     }
                     case Failure(t) => localsender ! akka.actor.Status.Failure(t)
@@ -202,6 +207,10 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
 
     def getActiveRoom(roomName:String):ActorRef = {
         ActiveRooms get roomName getOrElse null
+    }
+
+    def getClientname(name:String):String = {
+        ClientIdentities get name getOrElse ""
     }
     
     def createRoom(actor:ActorRef, roomName:String) = {
