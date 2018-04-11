@@ -98,6 +98,9 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
       case DynamicGroupRouter.DestroyGroupRouter =>
         roomName = ""
+
+      case SendErrorMessage(error) =>
+        send(s"[ERROR] ${error}", false)
     }
 
     override def postStop(): Unit = {

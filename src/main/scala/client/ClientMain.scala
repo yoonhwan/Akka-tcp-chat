@@ -9,7 +9,7 @@ import scala.io
 import scala.util.control.Breaks._
 
 /**
-  * Created by Niels Bokmans on 30-3-2016.
+  * Created by yoonhwan on 02-4-2018
   */
 object ClientMain extends App {
 
@@ -17,7 +17,7 @@ object ClientMain extends App {
   val system = ActorSystem("ClientMain")
   val Port:Int = system.settings.config.getInt("akka.server.port")
   val Server:String = system.settings.config.getString("akka.server.hostname")
-  val clientConnection = system.actorOf(Props(new ClientActor(new InetSocketAddress(InetAddress.getByName(Server), Port), system, false)))
+  val clientConnection = system.actorOf(Props(new ClientActor(new InetSocketAddress(InetAddress.getByName(Server), Port), system, null)))
   val bufferedReader = io.Source.stdin.bufferedReader()
   
   var line: String = null

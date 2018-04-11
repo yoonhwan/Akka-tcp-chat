@@ -50,7 +50,7 @@ class ChatAppStressTest
 
       val Port:Int = system.settings.config.getInt("akka.server.port")
       val Server:String = system.settings.config.getString("akka.server.hostname")
-      val clientConnection = system.actorOf(Props(new ClientActor(new InetSocketAddress(InetAddress.getByName(Server), Port), system, true)))
+      val clientConnection = system.actorOf(Props(new ClientActor(new InetSocketAddress(InetAddress.getByName(Server), Port), system, null)))
       expectNoMsg(2 seconds)
       clientConnection ! SendMessage("~identify stress-client-00")
       clientConnection ! SendMessage("~create stress-room")

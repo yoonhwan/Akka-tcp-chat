@@ -61,17 +61,16 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         case HasIdentifier(actorName, desireName) => {
             // log.info("HasIdentifier : " + actorName)
             val localsender = sender()
-            
             var hasKey: Boolean = false
             ClientIdentities.keys.takeWhile(_ => hasKey==false).foreach{ i =>  
                 if(ClientIdentities(i) == desireName)
                     hasKey = true
             }
-
             if (hasKey == false) {
                 localsender ! desireName
             } else {
                 localsender ! akka.actor.Status.Failure(new Exception("already exist user"))
+                context.actorSelection(actorName) ! SendErrorMessage("already exist user : " + desireName)
             }
         }
         case SetIdentifier(actorname, desirename) => {
@@ -115,8 +114,10 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             if(room != null)
             {
                 room ! m
-            }else
+            }else   {
                 sender ! akka.actor.Status.Failure(new Exception("exitchatroom error"))
+                context.actorSelection(clientActorName)  ! SendErrorMessage("exitchatroom error")
+            }
         }
         case GetAllChatRoomInfo => {
             if (ActiveRooms.size == 0) 
@@ -149,6 +150,7 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             if(room != null)
             {
                 sender() ! akka.actor.Status.Failure(new Exception("already exist chatroom"))
+                context.actorSelection(actor.path.name) ! SendErrorMessage("already exist chatroom")
             }else {
                 createRoom(actor,roomName)
                 sender ! roomName
@@ -166,8 +168,10 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
                 if(actorname.length > 0)
                     self ! SendServerMessage(s"<${actorname}> has joined the <$roomName> chatroom.")
 
-            }else
+            }else   {
                 localsender ! akka.actor.Status.Failure(new Exception("not exist room error"))
+                context.actorSelection(actor.path.name) ! SendErrorMessage("not exist room error")
+            }
         }
 
         case ExitChatRoom(actor, roomName) => {
@@ -188,8 +192,10 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
                     }
                     case Failure(t) => localsender ! akka.actor.Status.Failure(t)
                 }
-            }else
+            }else   {
                 localsender ! akka.actor.Status.Failure(new Exception("exitchatroom error"))
+                context.actorSelection(actor.path.name)  ! SendErrorMessage("exitchatroom error")
+            }
         }
         case ClearAllChatRoom => {
             ActiveRooms.foreach(f => {

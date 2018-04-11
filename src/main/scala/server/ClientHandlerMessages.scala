@@ -1,7 +1,7 @@
 package chatapp.server
 import akka.actor.{Actor, ActorRef, Props, ActorLogging, ActorSystem, Terminated}
 /**
-  * Created by Niels Bokmans on 30-3-2016.
+  * Created by yoonhwan on 02-4-2018
   */
 object ClientHandlerMessages {
 
@@ -9,5 +9,5 @@ object ClientHandlerMessages {
     case class SendAllClientMessage(clientActorName:String, message: String)
     case class SendRoomClientMessage(roomName:String, clientActorName:String, message: String)
     
-    
+    case class SendErrorMessage(error: String)
 }

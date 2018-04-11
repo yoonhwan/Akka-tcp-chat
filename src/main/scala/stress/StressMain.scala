@@ -3,7 +3,7 @@ package chatapp.stress
 
 import java.net.InetSocketAddress
 import java.net.InetAddress
-import akka.actor.{ActorSystem, Props, PoisonPill, Actor, ActorRef}
+import akka.actor.{ActorSystem, Props, PoisonPill, Actor, ActorRef, ActorLogging}
 import akka.io.Tcp._
 import chatapp.client.ClientActor
 import chatapp.client.ClientMessage.SendMessage
@@ -22,7 +22,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import chatapp.server.Util
 import scala.collection.mutable.HashMap
 /**
-  * Created by Niels Bokmans on 30-3-2016.
+  * Created by yoonhwan on 02-4-2018
   */
 
 object OneTimeCode {
@@ -32,27 +32,33 @@ object OneTimeCode {
 }
 
 case object Finish
-case object Start
 case class Make(count:Int)
 case class Work()
-class TestActor(address: InetSocketAddress, name:String) extends Actor{
-    val clientConnection = context.actorOf(Props(new ClientActor(address, context.system, true)))
+case object Make
+case class Error(actor: ActorRef, msg:String)
+
+class TestActor(receiver:ActorRef, address: InetSocketAddress, name:String) extends Actor{
+    import chatapp.client.ClientMessage._
+    val clientConnection = context.actorOf(Props(new ClientActor(address, context.system, self)))
       
     implicit val timeout = Timeout(10 seconds)
     implicit val ec = context.system.dispatcher
     
     def receive:Receive = {
-      case Start => {
+      case ClientConnected => {
         clientConnection ! SendMessage(s":identify ${name}")
+        Thread.sleep(1000)
         clientConnection ! SendMessage(":join stress-room")
+      }
+      case ClientError(error) => {
+        receiver ! Error(self, error)
       }
       case Finish => {
         clientConnection ! PoisonPill
-    
+        context stop self
       }
       case Work() =>{
-        val bufferedReader = io.Source.stdin.bufferedReader()
-        val byteSize:Int = 1 //1024*1024*1
+        val byteSize:Int = 10 //1024*1024*1
         var message = ByteString(OneTimeCode(byteSize))
         clientConnection ! SendMessage(message.utf8String)
       }
@@ -61,19 +67,32 @@ class TestActor(address: InetSocketAddress, name:String) extends Actor{
 
 }
 
-class Manager(address: InetSocketAddress) extends Actor {
+class Manager(address: InetSocketAddress) extends Actor with ActorLogging{
   val ActiveTestActors = HashMap.empty[String, ActorRef]
   val ActiveSchduler = HashMap.empty[String, akka.actor.Cancellable]
   
   
-
+  var totalCount = 100
   def receive:Receive = {
-    case Make(count) =>
-    {
-      for (a <- 0 until count) {
-        CreateTestActor
+    case Make => {
+      if(totalCount > 0)
+      {
+        val gap = 10
+        for (a <- 0 until gap) {
+          CreateTestActor
+        }  
+        totalCount -= gap
+
+        if(totalCount <= 0)
+          totalCount = 0
       }
     }
+
+    case Make(count) =>
+    {
+      totalCount += count
+    }
+
     case Finish => {
       ActiveSchduler.foreach(f => {
         f._2.cancel()
@@ -81,6 +100,13 @@ class Manager(address: InetSocketAddress) extends Actor {
       ActiveTestActors.foreach(f => {
         f._2 ! Finish
       })
+    }
+    case Error(actor, msg) => {
+      log.info(s"Stress test manager recive : ${actor.path} : ${msg}" )
+      ActiveSchduler.get(actor.path.name).get.cancel()
+      actor ! Finish
+
+      totalCount += 1
     }
     case _ => {
 
@@ -90,12 +116,16 @@ class Manager(address: InetSocketAddress) extends Actor {
 
   def CreateTestActor = {
     val name = s"stress-client-${java.util.UUID.randomUUID()}"
-    val testActor = context.actorOf(Props(new TestActor(address, name)))
-    testActor ! Start
-    val cancellable = context.system.scheduler.schedule(5 seconds, 200 millis, testActor, Work())
+    val testActor = context.actorOf(Props(new TestActor(self, address, name)), name)
+
+    val r = scala.util.Random
+    r.setSeed(1000L)
+    val start = 5.0 + r.nextFloat
+    val interval = 200 + r.nextInt(100)
+    val cancellable = context.system.scheduler.schedule(Duration(start.toLong,"seconds"), Duration(interval.toLong,"millis"), testActor, Work())
         
-    ActiveTestActors += (name -> testActor)
-    ActiveSchduler += (name -> cancellable)
+    ActiveTestActors += (testActor.path.name -> testActor)
+    ActiveSchduler += (testActor.path.name -> cancellable)
   }
 }
 
@@ -108,6 +138,8 @@ object StressMain extends App {
   
   val manager = system.actorOf(Props(new Manager(new InetSocketAddress(InetAddress.getByName(Server), Port))))
 
+  system.scheduler.schedule(1 seconds, 500 millis, manager, Make)
+
   val bufferedReader = io.Source.stdin.bufferedReader()
   var line: String = null
   while ({line = bufferedReader.readLine; line != null}) { 
@@ -116,6 +148,11 @@ object StressMain extends App {
   }
 
   def loop(message: String): Boolean = message match {
+    case "q" =>
+      manager!Finish
+      system.terminate()
+      
+      false
     case c:String =>
       manager!Make(c.toInt)
       true

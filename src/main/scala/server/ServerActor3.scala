@@ -8,7 +8,7 @@
 // import akka.util.ByteString
 
 // /**
-//   * Created by Niels Bokmans on 30-3-2016.
+//   * Created by yoonhwan on 02-4-2018
 //   */
 
 // case class SendMessage(clientActorName: String, clientIdentify: String, message: String, serverMessage: Boolean = false)
