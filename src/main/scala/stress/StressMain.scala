@@ -82,7 +82,7 @@ class Manager(address: InetSocketAddress) extends Actor with ActorLogging{
 
           totalCount = 0
         }
-        
+
         if(totalCount <= 0)
           totalCount = 0
       }
@@ -103,7 +103,7 @@ class Manager(address: InetSocketAddress) extends Actor with ActorLogging{
     }
     case Error(actor, msg) => {
       log.info(s"Stress test manager recive : ${actor.path} : ${msg}" )
-      ActiveSchduler.get(actor.path.name).get.cancel()
+//      ActiveSchduler.get(actor.path.name).get.cancel()
       actor ! Finish
 
       totalCount += 1

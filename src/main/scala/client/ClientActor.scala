@@ -1,14 +1,13 @@
 package chatapp.client
 
 import java.net.InetSocketAddress
+import java.nio.ByteOrder
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Kill, Terminated,ActorLogging, DeadLetter, PoisonPill}
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Kill, Terminated}
 import akka.io.Tcp._
 import akka.io.{IO, Tcp}
-import java.nio.ByteOrder
-import akka.util.{ByteString,CompactByteString}
+import akka.util.{ByteString, CompactByteString}
 import chatapp.client.ClientMessage.SendMessage
-import scala.util.{Success,Failure}
 import chatapp.server.Buffering
 
 /**
@@ -35,7 +34,7 @@ extends Actor with ActorLogging with Buffering{
       log.info("Successfully connected to " + address)
       val connection = sender()
       context watch connection
-      connection ! Register(self)
+      connection ! Register(self, true, true)
       context become buffer(connection, CompactByteString())
 
       if(stresstestActor!=null){
