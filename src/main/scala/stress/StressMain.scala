@@ -138,7 +138,7 @@ object StressMain extends App {
   
   val manager = system.actorOf(Props(new Manager(new InetSocketAddress(InetAddress.getByName(Server), Port))))
 
-  system.scheduler.schedule(1 seconds, 2000 millis, manager, Make)
+  system.scheduler.schedule(1 seconds, 5000 millis, manager, Make)
 
   val bufferedReader = io.Source.stdin.bufferedReader()
   var line: String = null

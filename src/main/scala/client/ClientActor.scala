@@ -3,7 +3,7 @@ package chatapp.client
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
 
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Kill, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Terminated}
 import akka.io.Tcp._
 import akka.io.{IO, Tcp}
 import akka.util.{ByteString, CompactByteString}
@@ -23,7 +23,7 @@ extends Actor with ActorLogging with Buffering{
   def receive: Receive = {
     case CommandFailed(command: Tcp.Command) =>
       log.info("Failed to connect to " + address.toString + " : " + command.toString)
-      self ! Kill
+//      self ! Kill
       if(stresstestActor!=null){
         stresstestActor ! chatapp.client.ClientMessage.ClientError("Failed to connect to " + address.toString + " : " + command.toString)
       }else{
