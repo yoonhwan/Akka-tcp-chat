@@ -16,9 +16,9 @@ object ServerMain extends App {
   import ClientHandlerMessages._
   import ClientHandlerSupervisor._
 
-  Kamon.loadReportersFromConfig()
-  Kamon.addReporter(new PrometheusReporter())
-  Kamon.addReporter(new ZipkinReporter())
+//  Kamon.loadReportersFromConfig()
+//  Kamon.addReporter(new PrometheusReporter())
+//  Kamon.addReporter(new ZipkinReporter())
   // Kamon.addReporter(new JaegerReporter())
   Kamon.addReporter(new KaminoReporter())
   Kamon.addReporter(new KaminoTracingReporter())

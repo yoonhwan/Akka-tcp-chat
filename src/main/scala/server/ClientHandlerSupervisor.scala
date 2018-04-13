@@ -1,14 +1,18 @@
 package chatapp.server
-import akka.actor.{Actor, ActorRef, Props, ActorLogging, ActorSystem, Terminated, PoisonPill}
-import akka.routing._
-import scala.concurrent.{Await,Future,Promise}
-import scala.util.{Success,Failure}
-import scala.concurrent.duration._
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.pattern.ask
 import akka.util.Timeout
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.collection.mutable.HashMap
 
+import scala.collection.mutable.HashMap
+import scala.concurrent.Await
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Failure, Success}
+
+import kamon.Kamon
+import kamon.prometheus.PrometheusReporter
+import kamon.zipkin.ZipkinReporter
+import kamon.jaeger.JaegerReporter
+import kamon.kamino.{KaminoReporter, KaminoTracingReporter}
 object ClientHandlerSupervisor {
     def props(): Props = Props(classOf[ClientHandlerSupervisor])
 
@@ -27,18 +31,26 @@ object ClientHandlerSupervisor {
 }
 
 class ClientHandlerSupervisor extends Actor with ActorLogging{
-    import akka.actor.OneForOneStrategy
-    import akka.actor.SupervisorStrategy._
-    import scala.concurrent.duration._
     import ClientHandlerMessages._
     import ClientHandlerSupervisor._
     import DynamicGroupRouter._
+    import akka.actor.OneForOneStrategy
+    import akka.actor.SupervisorStrategy._
+
+    import scala.concurrent.duration._
     implicit val timeout = Timeout(5 seconds)
     
     val ClientIdentities = HashMap.empty[String, String]
     val ActiveRooms = HashMap.empty[String, ActorRef]
     
     val globalRoom = context.actorOf(DynamicGroupRouter.props("globalRoom"), "globalRoom")
+    // One-liner
+    Kamon.gauge("users").set(0)
+
+    // Fully defined and refined (tagged) gauge
+    val onlineUsers = Kamon.gauge("users")
+      .refine("status" -> "online")
+
     override val supervisorStrategy =
     OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
         case _: ArithmeticException      ⇒ Resume
@@ -53,11 +65,24 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             sender() ! GeneratedClientHandlerActor(actor)
             globalRoom ! AddRouteeActor(actor)
             context watch actor
+            onlineUsers.increment()
         }
         case Terminated(obj) => 
             // log.info(obj + " : Terminated")
             self ! DisconnectedClientHandlerActor(obj)
-
+            onlineUsers.decrement()
+        case DisconnectedClientHandlerActor(obj) => {
+            // log.info("DisconnectedClientHandlerActor : " + obj.path.name)
+            context.stop(obj)
+            globalRoom ! RemoveRouteeActor(obj)
+            if (ClientIdentities.contains(obj.path.name))
+            {
+                val actorname = getClientname(obj.path.name)
+                if(actorname.length > 0)
+                    self ! SendServerMessage(s"<${actorname}> has left the <global> chatroom. exit chat")
+                ClientIdentities -= obj.path.name
+            }
+        }
         case HasIdentifier(actorName, desireName) => {
             // log.info("HasIdentifier : " + actorName)
             val localsender = sender()
@@ -81,18 +106,6 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             if(myname.length > 0)
                 self ! SendServerMessage(s"<${myname}> has joined the <global> chatroom.")
             localsender ! desirename
-        }
-        case DisconnectedClientHandlerActor(obj) => {
-            // log.info("DisconnectedClientHandlerActor : " + obj.path.name)
-            context.stop(obj)
-            globalRoom ! RemoveRouteeActor(obj)
-            if (ClientIdentities.contains(obj.path.name)) 
-            {
-                val actorname = getClientname(obj.path.name)
-                if(actorname.length > 0)
-                    self ! SendServerMessage(s"<${actorname}> has left the <global> chatroom. exit chat")
-                ClientIdentities -= obj.path.name
-            }       
         }
         case GetAllClientIdentifier => {
             if (ClientIdentities.isEmpty) 

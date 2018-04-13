@@ -1,26 +1,18 @@
 package chatapp.stress
 
 
-import java.net.InetSocketAddress
-import java.net.InetAddress
-import akka.actor.{ActorSystem, Props, PoisonPill, Actor, ActorRef, ActorLogging}
-import akka.io.Tcp._
-import chatapp.client.ClientActor
-import chatapp.client.ClientMessage.SendMessage
-import scala.io
-import scala.util.control.Breaks._
-import scala.util.Random
-import java.nio.ByteBuffer
-import scala.concurrent.duration._
-import akka.util.{Timeout,ByteString}
+import java.net.{InetAddress, InetSocketAddress}
 
-import scala.concurrent.{Await,Future,Promise}
-import scala.util.{Success,Failure}
-import scala.concurrent.duration._
-import akka.pattern.ask
-import scala.concurrent.ExecutionContext.Implicits.global
-import chatapp.server.Util
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
+import akka.util.{ByteString, Timeout}
+import chatapp.client.ClientActor
+
 import scala.collection.mutable.HashMap
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.io
+import scala.util.Random
+import scala.util.control.Breaks._
 /**
   * Created by yoonhwan on 02-4-2018
   */
@@ -46,9 +38,9 @@ class TestActor(receiver:ActorRef, address: InetSocketAddress, name:String) exte
     
     def receive:Receive = {
       case ClientConnected => {
-        clientConnection ! SendMessage(s":identify ${name}")
-        Thread.sleep(1000)
-        clientConnection ! SendMessage(":join stress-room")
+//        clientConnection ! SendMessage(s":identify ${name}")
+//        Thread.sleep(1000)
+//        clientConnection ! SendMessage(":join stress-room")
       }
       case ClientError(error) => {
         receiver ! Error(self, error)
@@ -122,10 +114,10 @@ class Manager(address: InetSocketAddress) extends Actor with ActorLogging{
     r.setSeed(1000L)
     val start = 5.0 + r.nextFloat
     val interval = 200 + r.nextInt(100)
-    val cancellable = context.system.scheduler.schedule(Duration(start.toLong,"seconds"), Duration(interval.toLong,"millis"), testActor, Work())
+//    val cancellable = context.system.scheduler.schedule(Duration(start.toLong,"seconds"), Duration(interval.toLong,"millis"), testActor, Work())
         
     ActiveTestActors += (testActor.path.name -> testActor)
-    ActiveSchduler += (testActor.path.name -> cancellable)
+//    ActiveSchduler += (testActor.path.name -> cancellable)
   }
 }
 
