@@ -69,12 +69,20 @@ class Manager(address: InetSocketAddress) extends Actor with ActorLogging{
     case Make => {
       if(totalCount > 0)
       {
-        val gap = 10
+        val gap = 100
         for (a <- 0 until gap) {
           CreateTestActor
         }  
         totalCount -= gap
 
+        if(totalCount <= gap) {
+          for (a <- 0 until totalCount ) {
+            CreateTestActor
+          }
+
+          totalCount = 0
+        }
+        
         if(totalCount <= 0)
           totalCount = 0
       }
@@ -130,7 +138,7 @@ object StressMain extends App {
   
   val manager = system.actorOf(Props(new Manager(new InetSocketAddress(InetAddress.getByName(Server), Port))))
 
-  system.scheduler.schedule(1 seconds, 500 millis, manager, Make)
+  system.scheduler.schedule(1 seconds, 2000 millis, manager, Make)
 
   val bufferedReader = io.Source.stdin.bufferedReader()
   var line: String = null
