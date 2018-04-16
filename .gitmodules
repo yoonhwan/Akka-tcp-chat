@@ -1,0 +1,3 @@
+[submodule "target"]
+	path = target
+	url = /Project/ScalaSchool/chat/target
