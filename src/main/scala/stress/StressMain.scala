@@ -38,9 +38,9 @@ class TestActor(receiver:ActorRef, address: InetSocketAddress, name:String) exte
     
     def receive:Receive = {
       case ClientConnected => {
-//        clientConnection ! SendMessage(s":identify ${name}")
-//        Thread.sleep(1000)
-//        clientConnection ! SendMessage(":join stress-room")
+        clientConnection ! SendMessage(s":identify ${name}")
+        Thread.sleep(2000)
+        clientConnection ! SendMessage(":join stress-room")
       }
       case ClientError(error) => {
         receiver ! Error(self, error)
@@ -64,23 +64,24 @@ class Manager(address: InetSocketAddress) extends Actor with ActorLogging{
   val ActiveSchduler = HashMap.empty[String, akka.actor.Cancellable]
   
   
-  var totalCount = 100
+  var totalCount = 1
   def receive:Receive = {
     case Make => {
       if(totalCount > 0)
       {
-        val gap = 100
-        for (a <- 0 until gap) {
-          CreateTestActor
-        }  
-        totalCount -= gap
-
-        if(totalCount <= gap) {
-          for (a <- 0 until totalCount ) {
+        val gap = 1000
+        var loop = totalCount / gap
+        if (loop > 0) {
+          for (a <- 0 until gap) {
             CreateTestActor
           }
-
-          totalCount = 0
+          totalCount -= gap
+        }else {
+          var loop = totalCount % gap
+          for (a <- 0 until loop) {
+            CreateTestActor
+          }
+          totalCount -= loop
         }
 
         if(totalCount <= 0)
@@ -103,7 +104,7 @@ class Manager(address: InetSocketAddress) extends Actor with ActorLogging{
     }
     case Error(actor, msg) => {
       log.info(s"Stress test manager recive : ${actor.path} : ${msg}" )
-//      ActiveSchduler.get(actor.path.name).get.cancel()
+      ActiveSchduler.get(actor.path.name).get.cancel()
       actor ! Finish
 
       totalCount += 1
@@ -122,10 +123,10 @@ class Manager(address: InetSocketAddress) extends Actor with ActorLogging{
     r.setSeed(1000L)
     val start = 5.0 + r.nextFloat
     val interval = 200 + r.nextInt(100)
-//    val cancellable = context.system.scheduler.schedule(Duration(start.toLong,"seconds"), Duration(interval.toLong,"millis"), testActor, Work())
+    val cancellable = context.system.scheduler.schedule(Duration(start.toLong,"seconds"), Duration(interval.toLong,"millis"), testActor, Work())
         
     ActiveTestActors += (testActor.path.name -> testActor)
-//    ActiveSchduler += (testActor.path.name -> cancellable)
+    ActiveSchduler += (testActor.path.name -> cancellable)
   }
 }
 
@@ -134,7 +135,7 @@ object StressMain extends App {
       
   val system = ActorSystem("StressMain")
   val Port:Int = system.settings.config.getInt("akka.server.port")
-  val Server:String = system.settings.config.getString("akka.server.hostname")
+  val Server:String = system.settings.config.getString("akka.server.client-hostname")
   
   val manager = system.actorOf(Props(new Manager(new InetSocketAddress(InetAddress.getByName(Server), Port))))
 
