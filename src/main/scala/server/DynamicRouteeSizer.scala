@@ -1,6 +1,6 @@
 package chatapp.server
+import akka.actor.{Actor, ActorRef, PoisonPill, Props, Terminated}
 import akka.routing._
-import akka.actor.{Actor, ActorRef, Props, ActorLogging, ActorSystem, Terminated, PoisonPill}
 
 object DynamicRouteeSizer   {
     case class PreferredSize(size: Int)

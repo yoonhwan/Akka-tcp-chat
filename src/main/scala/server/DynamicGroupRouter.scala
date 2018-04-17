@@ -1,11 +1,10 @@
 package chatapp.server
-import akka.actor.{Actor, ActorRef, ActorPath, Props, ActorLogging, ActorSystem, Terminated, PoisonPill}
-import scala.concurrent.{Await,Future,Promise}
-import scala.util.{Success,Failure}
-import scala.concurrent.duration._
+import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, Props}
 import akka.pattern.ask
 import akka.util.Timeout
-import scala.concurrent.ExecutionContext.Implicits.global
+
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 
 object DynamicGroupRouter   {
     def props(roomName:String): Props = Props(classOf[DynamicGroupRouter], roomName)
@@ -17,8 +16,8 @@ object DynamicGroupRouter   {
 }
 class DynamicGroupRouter(roomName:String) extends Actor with ActorLogging{
     import ClientHandlerMessages._
-    import DynamicGroupRouter._
     import ClientHandlerSupervisor._
+    import DynamicGroupRouter._
     implicit val timeout = Timeout(5 seconds)
     
     val ActiveClients = scala.collection.mutable.HashMap.empty[ActorPath, ActorRef]

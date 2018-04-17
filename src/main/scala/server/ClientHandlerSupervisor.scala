@@ -7,12 +7,6 @@ import scala.collection.mutable.HashMap
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success}
-
-import kamon.Kamon
-import kamon.prometheus.PrometheusReporter
-import kamon.zipkin.ZipkinReporter
-import kamon.jaeger.JaegerReporter
-import kamon.kamino.{KaminoReporter, KaminoTracingReporter}
 object ClientHandlerSupervisor {
     def props(): Props = Props(classOf[ClientHandlerSupervisor])
 
@@ -44,12 +38,6 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
     val ActiveRooms = HashMap.empty[String, ActorRef]
     
     val globalRoom = context.actorOf(DynamicGroupRouter.props("globalRoom"), "globalRoom")
-    // One-liner
-    Kamon.gauge("users").set(0)
-
-    // Fully defined and refined (tagged) gauge
-    val onlineUsers = Kamon.gauge("users")
-      .refine("status" -> "online")
 
     override val supervisorStrategy =
     OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
@@ -65,12 +53,10 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             sender() ! GeneratedClientHandlerActor(actor)
             globalRoom ! AddRouteeActor(actor)
             context watch actor
-            onlineUsers.increment()
         }
         case Terminated(obj) => 
             // log.info(obj + " : Terminated")
             self ! DisconnectedClientHandlerActor(obj)
-            onlineUsers.decrement()
         case DisconnectedClientHandlerActor(obj) => {
             // log.info("DisconnectedClientHandlerActor : " + obj.path.name)
             context.stop(obj)

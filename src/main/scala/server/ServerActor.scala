@@ -1,14 +1,10 @@
 package chatapp.server
 
-import java.net.InetSocketAddress
-import java.net.InetAddress
+import java.net.{InetAddress, InetSocketAddress}
 
-import akka.actor.OneForOneStrategy
-import akka.actor.SupervisorStrategy._
-import akka.actor.{Actor, ActorRef, Props, ActorLogging, ActorSystem, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorSystem, Terminated}
 import akka.io.Tcp._
 import akka.io.{IO, Tcp}
-import akka.util.ByteString
 
 class ServerActor(actorSystem: ActorSystem) extends Actor with ActorLogging{
     import ClientHandlerMessages._
