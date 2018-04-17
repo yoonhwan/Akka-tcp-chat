@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+path="$(dirname "$0")"
+cd $path/../
+
+sbt clean compile stage
+
+cd binary/
+rm -rf stage/bin
+git add *
+git commit -m 'remove bin for refresh'
+
+cd ../
+cp -r target/universal/stage binary
+cd binary/
+git add *
+git status
+git commit -m "publish"
+git push
