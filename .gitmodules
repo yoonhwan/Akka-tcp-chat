@@ -1,3 +1,3 @@
-[submodule "target"]
-	path = target
-	url = /Project/ScalaSchool/chat/target
+[submodule "binary"]
+	path = binary
+	url = /Project/ScalaSchool/chat/binary
