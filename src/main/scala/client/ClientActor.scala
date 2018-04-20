@@ -5,7 +5,7 @@ import java.nio.ByteOrder
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Terminated}
 import akka.io.Tcp._
-import akka.io.{IO, Tcp}
+import akka.io._
 import akka.util.{ByteString, CompactByteString}
 import chatapp.client.ClientMessage.SendMessage
 import chatapp.server.Buffering
@@ -87,4 +87,29 @@ extends Actor with ActorLogging with Buffering{
       log.info(obj + " : Terminated")
   }
   
+}
+
+class ClientActorUDP(address: InetSocketAddress, actorSystem: ActorSystem, stresstestActor: ActorRef)
+  extends Actor with ActorLogging with Buffering{
+  import context.system
+  IO(UdpConnected) ! UdpConnected.Connect(self, address)
+
+  def receive: Receive = {
+    case UdpConnected.Connected ⇒
+      log.info("Successfully connected to " + address)
+      context.become(ready(sender()))
+  }
+
+  def ready(connection: ActorRef): Receive = {
+    case UdpConnected.Received(data) ⇒
+    // process data, send it on, etc.
+      log.info(s"message received : ${data}")
+    case msg: String ⇒
+      connection ! UdpConnected.Send(ByteString(msg))
+    case UdpConnected.Disconnect ⇒
+      connection ! UdpConnected.Disconnect
+    case UdpConnected.Disconnected ⇒ context.stop(self)
+    case SendMessage(msg) =>
+      connection ! UdpConnected.Send(ByteString(msg))
+  }
 }

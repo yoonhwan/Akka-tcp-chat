@@ -2,19 +2,17 @@
 package chatapp.server
 
 import java.net.InetSocketAddress
-
-import akka.actor.{Actor, ActorRef, Props, ActorLogging, ActorSystem, Terminated}
-import akka.io.Tcp._
-import akka.io.{IO, Tcp}
 import java.nio.ByteOrder
-import akka.util.{ByteString,CompactByteString}
-import scala.concurrent.{Await,Future}
-import scala.util.{Success,Failure}
-import scala.concurrent.duration._
+
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
+import akka.io.Tcp
 import akka.pattern.ask
-import akka.util.Timeout
+import akka.util.{ByteString, CompactByteString, Timeout}
+
 import scala.concurrent.ExecutionContext.Implicits.global
-import akka.pattern.pipe
+import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.util.{Failure, Success}
         
 object ClientHandlerActor {
 
@@ -29,10 +27,10 @@ object ClientHandlerActor {
 class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: InetSocketAddress)
   extends Actor with ActorLogging with Buffering{
 
-    import Tcp._
     import ClientHandlerActor._
     import ClientHandlerMessages._
     import ClientHandlerSupervisor._
+    import Tcp._
     
     implicit val timeout = Timeout(5 seconds)
     val CommandCharacter = ":"
@@ -90,7 +88,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         val (pkt, remainder) = getPacket(msg)
         // Do something with your packet
         pkt.foreach(f=>ProccessData(f))
-        // log.info(s"recv message : ${data.utf8String.length} : dc = ${pkt.length} : rc = ${remainder.length}")
+//        log.info(s"recv message : ${data.utf8String.length} : dc = ${pkt.length} : rc = ${remainder.length} : data = ${data.utf8String}")
         context become writing(remainder) 
 
       case GetClientInfomation =>

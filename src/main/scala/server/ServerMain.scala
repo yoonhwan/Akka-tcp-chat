@@ -13,6 +13,7 @@ object ServerMain extends App {
 
   val system = ActorSystem("ServerMain")
   val server = system.actorOf(Props(new ServerActor(system)), "server-actor")
+  val serverUdp = system.actorOf(Props(new ServerActorUDP(system)), "server-udp-actor")
   val bufferedReader = io.Source.stdin.bufferedReader()
   
 
@@ -25,6 +26,7 @@ object ServerMain extends App {
   def loop(message: String): Boolean = message match {
     case ":quit" =>
       system stop server
+      system stop serverUdp
       system.terminate()
       false
     case ":clearroom" =>
