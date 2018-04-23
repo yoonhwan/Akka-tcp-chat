@@ -16,6 +16,9 @@ import chatapp.server.Buffering
 
 class ClientActor(address: InetSocketAddress, actorSystem: ActorSystem, stresstestActor: ActorRef) 
 extends Actor with ActorLogging with Buffering{
+  import chatapp.client.ClientMessage._
+  var _typeOfSerializer = SERIALIZER.ROW
+
   IO(Tcp)(actorSystem) ! Connect(address)
 
   implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
@@ -50,7 +53,7 @@ extends Actor with ActorLogging with Buffering{
     
       pkt.foreach(f=>{
         if(stresstestActor==null)
-          log.info(f.utf8String)
+          ReceiveData(f)
         if(stresstestActor!=null && (f.utf8String contains "[ERROR]") == true){
           stresstestActor ! chatapp.client.ClientMessage.ClientError(s"receive error message kill actor : ${f.utf8String}")
           log.info(s"receive error message kill actor : ${f.utf8String}" )
@@ -60,11 +63,7 @@ extends Actor with ActorLogging with Buffering{
 
       context become buffer(connection, remainder) 
     case SendMessage(message) =>
-      val msg = ByteString(message,"UTF-8")
-      val packet = ByteString.newBuilder
-                              .putInt(msg.length)
-                              .result() ++ msg
-      connection ! Write(packet)
+      SendData(connection, message)
 
       if(sender != context.system.deadLetters)
       {
@@ -73,7 +72,6 @@ extends Actor with ActorLogging with Buffering{
           case _ => sender ! "success"
         }
       }
-      
       // log.info(s"send message :${packet.length}")
 
     case PeerClosed     => 
@@ -85,6 +83,36 @@ extends Actor with ActorLogging with Buffering{
       
     case Terminated(obj) =>
       log.info(obj + " : Terminated")
+  }
+
+  def ReceiveData(data:ByteString): Unit = {
+
+    val _serializerIndex = SERIALIZER.withNameOpt(data.iterator.getByte) getOrElse SERIALIZER.ROW
+
+    val rem = data drop 1 // Pop off 1byte (serializer type)
+
+    _serializerIndex match {
+      case SERIALIZER.ROW => {
+        log.info(rem.utf8String)
+      }
+      case SERIALIZER.JSON => {
+
+      }
+      case SERIALIZER.ZEROF => {
+
+      }
+    }
+  }
+
+  def SendData(connection:ActorRef, message:String): Unit = {
+    val msg = ByteString(message,"UTF-8")
+    val serializedMsg = ByteString.newBuilder.putByte(_typeOfSerializer.id.asInstanceOf[Byte]).result() ++ msg
+
+    log.info("client : " + serializedMsg.toString())
+    val packet = ByteString.newBuilder
+      .putInt(msg.length)
+      .result() ++ serializedMsg
+    connection ! Write(packet)
   }
   
 }

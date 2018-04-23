@@ -15,7 +15,8 @@ lazy val root = (project in file(".")).
       "com.typesafe.akka" %%  "akka-remote"             % akkaVersion,
       "com.typesafe.akka" %%  "akka-multi-node-testkit" % akkaVersion,
       "com.typesafe.akka" %%  "akka-contrib"            % akkaVersion,
-      "com.typesafe.akka" %%  "akka-testkit"            % akkaVersion  % "test"
-      
+      "com.propensive" %% "rapture-base" % "2.0.0-M9",
+      "com.typesafe.akka" %%  "akka-testkit"            % akkaVersion  % "test",
+
     )
   ).enablePlugins(JavaAppPackaging)
