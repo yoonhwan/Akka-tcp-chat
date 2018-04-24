@@ -21,8 +21,7 @@ extends Actor with ActorLogging with Buffering{
 
   IO(Tcp)(actorSystem) ! Connect(address)
 
-  implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
-  
+
   def receive: Receive = {
     case CommandFailed(command: Tcp.Command) =>
       log.info("Failed to connect to " + address.toString + " : " + command.toString)
@@ -105,12 +104,13 @@ extends Actor with ActorLogging with Buffering{
   }
 
   def SendData(connection:ActorRef, message:String): Unit = {
+    implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
     val msg = ByteString(message,"UTF-8")
     val serializedMsg = ByteString.newBuilder.putByte(_typeOfSerializer.id.asInstanceOf[Byte]).result() ++ msg
 
     log.info("client : " + serializedMsg.toString())
     val packet = ByteString.newBuilder
-      .putInt(msg.length)
+      .putInt(serializedMsg.length)
       .result() ++ serializedMsg
     connection ! Write(packet)
   }

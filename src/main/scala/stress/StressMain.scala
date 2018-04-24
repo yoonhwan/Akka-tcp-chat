@@ -32,15 +32,15 @@ case class Error(actor: ActorRef, msg:String)
 class TestActor(receiver:ActorRef, address: InetSocketAddress, name:String) extends Actor{
     import chatapp.client.ClientMessage._
     val clientConnection = context.actorOf(Props(new ClientActor(address, context.system, self)))
-      
-    implicit val timeout = Timeout(10 seconds)
+
+  implicit val timeout = Timeout(10 seconds)
     implicit val ec = context.system.dispatcher
     
     def receive:Receive = {
       case ClientConnected => {
-        clientConnection ! SendMessage(s":identify ${name}")
+        clientConnection ! SendMessage(s"identify|${name}")
         Thread.sleep(2000)
-        clientConnection ! SendMessage(":join stress-room")
+        clientConnection ! SendMessage("join|stress-room")
       }
       case ClientError(error) => {
         receiver ! Error(self, error)
@@ -52,7 +52,7 @@ class TestActor(receiver:ActorRef, address: InetSocketAddress, name:String) exte
       case Work() =>{
         val byteSize:Int = 10 //1024*1024*1
         var message = ByteString(OneTimeCode(byteSize))
-        clientConnection ! SendMessage(message.utf8String)
+        clientConnection ! SendMessage(s"chat|${message.utf8String}")
       }
 
     }

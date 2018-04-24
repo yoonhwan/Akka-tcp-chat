@@ -8,6 +8,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.io.Tcp
 import akka.pattern.ask
 import akka.util.{ByteString, CompactByteString, Timeout}
+import chatapp.client.SERIALIZER
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -33,16 +34,17 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     import Tcp._
     
     implicit val timeout = Timeout(5 seconds)
-    val CommandCharacter = ":"
+    val CommandCharacter = '|'
     var userIdentify = ""
     var roomName = ""
     var support_chat_all_users:Boolean = false
+    var _typeOfSerializer = SERIALIZER.ROW
 
-    override def preStart(): Unit = {
+  override def preStart(): Unit = {
       connection ! Register(self)//, keepOpenOnPeerClosed = true)
       context watch connection
       // sign death pact: this actor terminates when connection breaks
-      send("Please userIdentify yourself using <:identify> [name]!", serverMessage = true)
+      send("Please userIdentify yourself using <identify|[name]>", serverMessage = true)
     }
 
     // start out in optimistic write-through mode
@@ -77,7 +79,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       }
       case SendRoomClientMessage(roomName, clientActorName, message) => {
         if(roomName.length <= 0)
-          send("Please create or join room yourself using <:create><:join> [name]! Also you can show all list rooms <:chatroom>", true)
+          send("Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", true)
         else
           if(clientActorName != userIdentify)
             send(s"from <$clientActorName> user message at room <$roomName> : $message", false)
@@ -87,7 +89,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         val msg = buf ++ data
         val (pkt, remainder) = getPacket(msg)
         // Do something with your packet
-        pkt.foreach(f=>ProccessData(f))
+        pkt.foreach(f=>ProccessData(ReceiveData(f)))
 //        log.info(s"recv message : ${data.utf8String.length} : dc = ${pkt.length} : rc = ${remainder.length} : data = ${data.utf8String}")
         context become writing(remainder) 
 
@@ -119,74 +121,84 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       
       val text = data.utf8String
       val clientActorName = self.path.name
-      if (isCommand(text)) {
-        getCommand(text) match {
-          case "quit" => //quit(clientActorName)
-          case "identify" => identify(clientActorName, text)
-          case "online" => online(clientActorName)
-          case "chatroom" => chatroom()
-          case "create" => createChatRoom(self, text)
-          case "join" => joinChatRoom(self, text)
-          case "exit" => exitChatRoom(self)
-          case _ => send("Unknown command! if you need show all command. type the command <:help>.", serverMessage = true)
-        }
-      } 
-      else {
-        if (userIdentify.length <= 0) {
-          send("Please userIdentify yourself using <:identify> [name]!", serverMessage = true)
-        } else {
-          if(support_chat_all_users)
-          {
-            if(roomName.length <= 0)
-              supervisor ! SendAllClientMessage(userIdentify, text)
-            else
-              supervisor ! SendRoomClientMessage(roomName, userIdentify, text)
-          }else {
-            if(roomName.length <= 0)
-              send("Please create or join room yourself using <:create><:join> [name]! Also you can show all list rooms <:chatroom>", serverMessage = true)
-            else
-              supervisor ! SendRoomClientMessage(roomName, userIdentify, text)
-          }
+      val splitdata = getCommand(text)
+      splitdata._1 match {
+        case "quit" => //quit(clientActorName)
+        case "identify" => checkCommandExcute(clientActorName, splitdata._2, identify _)
+        case "online" => online(clientActorName)
+        case "chatroom" => chatroom()
+        case "create" => checkCommandExcute(self, splitdata._2, createChatRoom _)
+        case "join" => checkCommandExcute(self, splitdata._2, joinChatRoom _)
+        case "exit" => exitChatRoom(self)
+        case "chat" => chat(splitdata._2)
+        case _ => send("Unknown command! if you need show all command. type the command <help>.", serverMessage = true)
+      }
+    }
+
+    def checkCommandExcute(actorName:String, msg:String, f:(String, String) => Unit): Unit =
+    {
+      if(msg.length() <= 0)
+        send("Input Second value command! if you need show all command. type the command <help>.", serverMessage = true)
+      else
+        f(actorName, msg)
+    }
+    def checkCommandExcute(actor:ActorRef, msg:String, f:(ActorRef, String) => Unit): Unit =
+    {
+      if(msg.length() <= 0)
+        send("Input Second value command! if you need show all command. type the command <help>.", serverMessage = true)
+      else
+        f(actor, msg)
+    }
+
+    def getCommand(message: String): (String , String)= {
+      if(message contains "|") {
+        val split = message.split(CommandCharacter)
+        //      split.foreach(log.info)
+        (split(0), split(1))
+      }else {
+        (message, "")
+      }
+    }
+
+    def chat(message: String) = {
+      if (userIdentify.length <= 0) {
+        send("Please userIdentify yourself using <identify|[name]>", serverMessage = true)
+      } else {
+        if(support_chat_all_users)
+        {
+          if(roomName.length <= 0)
+            supervisor ! SendAllClientMessage(userIdentify, message)
+          else
+            supervisor ! SendRoomClientMessage(roomName, userIdentify, message)
+        }else {
+          if(roomName.length <= 0)
+            send("Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", serverMessage = true)
+          else
+            supervisor ! SendRoomClientMessage(roomName, userIdentify, message)
         }
       }
     }
 
-    def isCommand(message: String): Boolean = {
-      message.startsWith(CommandCharacter)
-    }
-
-    def getCommand(message: String): String = {
-      val split = message.split(" ")
-      val command = split(0)
-      val actualCommand = command.substring(1, command.length())
-      actualCommand
-    }
-
     def identify(clientActorName: String, text: String) = {
-      val split = text.split(" ")
-      if (split.length == 1) {
-        send("Please enter what username you would like to identify with!", serverMessage = true)
-      } else {
-        val clientActorName = self.path.name
-        val desiredName = split(1)
+      val clientActorName = self.path.name
+      val desiredName = text
 
-        val future: Future[Any] = supervisor ? HasIdentifier(clientActorName, desiredName)
-        future onComplete {
-          case Success(result) => {
-            val future_sub: Future[Any] = supervisor ? SetIdentifier(clientActorName, desiredName)
-            future_sub onComplete {
-              case Success(result_sub) => {
-                userIdentify = result_sub.asInstanceOf[String]
-                send("Successfully set your identity to " + userIdentify, serverMessage = true)
-                if(roomName.length>0) {
-                  exitChatRoom(self)
-                }
+      val future: Future[Any] = supervisor ? HasIdentifier(clientActorName, desiredName)
+      future onComplete {
+        case Success(result) => {
+          val future_sub: Future[Any] = supervisor ? SetIdentifier(clientActorName, desiredName)
+          future_sub onComplete {
+            case Success(result_sub) => {
+              userIdentify = result_sub.asInstanceOf[String]
+              send("Successfully set your identity to " + userIdentify, serverMessage = true)
+              if(roomName.length>0) {
+                exitChatRoom(self)
               }
-              case Failure(t) => t.printStackTrace
             }
+            case Failure(t) => t.printStackTrace
           }
-          case Failure(t) => send(s"There is already an user with this username! [$desiredName] Also you can show all list users <:online>", serverMessage = true)
         }
+        case Failure(t) => send(s"There is already an user with this username! [$desiredName] Also you can show all list users <online>", serverMessage = true)
       }
     }
 
@@ -218,41 +230,31 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     def createChatRoom(actor:ActorRef, text:String):Unit = {
       if(roomName.length > 0) {
-        send(s"Already joined chat room : $roomName, if you need create room. exit room first.<:exit>", serverMessage = true)
+        send(s"Already joined chat room : $roomName, if you need create room. exit room first.<exit>", serverMessage = true)
       }else {
-        val split = text.split(" ")
-        if (split.length == 1) {
-            send("Please enter what chatroom name you would like to create room with!", serverMessage = true)
-        } else{
-          val name = split(1)
-          supervisor ? MakeChatRoom(actor, name) onComplete {
-            case Success(result) => {
-              roomName = result.asInstanceOf[String]
-              if(roomName.length > 0){
-                send(s"Successfully create the chatroom($roomName).", serverMessage = true)
-              }
+        val name = text
+        supervisor ? MakeChatRoom(actor, name) onComplete {
+          case Success(result) => {
+            roomName = result.asInstanceOf[String]
+            if(roomName.length > 0){
+              send(s"Successfully create the chatroom($roomName).", serverMessage = true)
             }
-            case Failure(t) => send(s"There is already an room with this roomname! [name]!, if you need join the room use <:join>. Also you can show all list rooms <:chatroom>", serverMessage = true)
           }
+          case Failure(t) => send(s"There is already an room with this roomname! [name]!, if you need join the room use <join>. Also you can show all list rooms <chatroom>", serverMessage = true)
         }
       }
     }
 
     def joinChatRoom(actor:ActorRef, text:String):Unit = {
-      val split = text.split(" ")
-      if (split.length == 1) {
-        send("Please enter what chatroom name you would like to joinning with!", serverMessage = true)
-      } else{
-        val name = split(1)
-        supervisor ? JoinChatRoom(actor, name) onComplete {
-          case Success(result) => {
-            roomName = result.asInstanceOf[String]
-            if(roomName.length > 0){
-              send(s"Successfully join the chatroom($roomName).", serverMessage = true)
-            }
+      val name = text
+      supervisor ? JoinChatRoom(actor, name) onComplete {
+        case Success(result) => {
+          roomName = result.asInstanceOf[String]
+          if(roomName.length > 0){
+            send(s"Successfully join the chatroom($roomName).", serverMessage = true)
           }
-          case Failure(t) => send("There is not exist an room name! Also you can show all list rooms <:chatroom>", serverMessage = true)
         }
+        case Failure(t) => send("There is not exist an room name! Also you can show all list rooms <chatroom>", serverMessage = true)
       }
     }
 
@@ -284,11 +286,30 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     def makePacket(message: String): ByteString = {
       implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
       val msg = ByteString(message,"UTF-8")
+      val serializedMsg = ByteString.newBuilder.putByte(_typeOfSerializer.id.asInstanceOf[Byte]).result() ++ msg
       val packet = ByteString.newBuilder
-                              .putInt(msg.length)
-                              .result() ++ msg
-
+        .putInt(serializedMsg.length)
+        .result() ++ serializedMsg
       // log.info(s"send message :${packet.length} : ${msg.length.toInt}")
       packet
+    }
+
+    def ReceiveData(data:ByteString): ByteString = {
+
+      _typeOfSerializer = SERIALIZER.withNameOpt(data.iterator.getByte) getOrElse SERIALIZER.ROW
+
+      val rem = data drop 1 // Pop off 1byte (serializer type)
+
+      _typeOfSerializer match {
+        case SERIALIZER.ROW => {
+          rem
+        }
+        case SERIALIZER.JSON => {
+          ByteString("not support yet", "UTF-8")
+        }
+        case SERIALIZER.ZEROF => {
+          ByteString("not support yet", "UTF-8")
+        }
+      }
     }
   }
