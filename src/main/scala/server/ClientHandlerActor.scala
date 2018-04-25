@@ -81,8 +81,9 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         if(roomName.length <= 0)
           send("Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", true)
         else
-          if(clientActorName != userIdentify)
-            send(s"from <$clientActorName> user message at room <$roomName> : $message", false)
+//          if(clientActorName != userIdentify)
+//            send(s"from <$clientActorName> user message at room <$roomName> : $message", false)
+          send(s"$message", false)
       }
 
       case Received(data) =>
@@ -118,10 +119,12 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     
     def ProccessData(data: ByteString): Unit = {
-      
-      val text = data.utf8String
+//      log.info(s"ProccessData 1 :${data}")
+
+      var text = data.utf8String
       val clientActorName = self.path.name
       val splitdata = getCommand(text)
+
       splitdata._1 match {
         case "quit" => //quit(clientActorName)
         case "identify" => checkCommandExcute(clientActorName, splitdata._2, identify _)
@@ -151,9 +154,10 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def getCommand(message: String): (String , String)= {
+
       if(message contains "|") {
         val split = message.split(CommandCharacter)
-        //      split.foreach(log.info)
+//        split.foreach(log.info)
         (split(0), split(1))
       }else {
         (message, "")
@@ -285,19 +289,21 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     def makePacket(message: String): ByteString = {
       implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
-      val msg = ByteString(message,"UTF-8")
+
+//      log.info(s"1: ${_typeOfSerializer.id.asInstanceOf[Byte]}, 2:${message},  3: ${ByteString(message)}")
+      var msg = ByteString(message,"UTF-8")
       val serializedMsg = ByteString.newBuilder.putByte(_typeOfSerializer.id.asInstanceOf[Byte]).result() ++ msg
       val packet = ByteString.newBuilder
         .putInt(serializedMsg.length)
         .result() ++ serializedMsg
-      // log.info(s"send message :${packet.length} : ${msg.length.toInt}")
+//      log.info(s"send message :${packet.length} : ${msg.length} : ${packet}")
       packet
     }
 
     def ReceiveData(data:ByteString): ByteString = {
 
-      _typeOfSerializer = SERIALIZER.withNameOpt(data.iterator.getByte) getOrElse SERIALIZER.ROW
-
+      _typeOfSerializer = SERIALIZER.withNameOpt(data.iterator.getByte.toInt) getOrElse SERIALIZER.ROW
+//      log.info(s"ReceiveData : ${data.iterator.getByte.toInt}, _typeOfSerializer : ${_typeOfSerializer}, len : ${data.utf8String}, data : ${data}")
       val rem = data drop 1 // Pop off 1byte (serializer type)
 
       _typeOfSerializer match {
@@ -308,7 +314,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
           ByteString("not support yet", "UTF-8")
         }
         case SERIALIZER.ZEROF => {
-          ByteString("not support yet", "UTF-8")
+          rem
         }
       }
     }
