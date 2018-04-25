@@ -9,7 +9,7 @@ object SERIALIZER extends Enumeration {
   val JSON= Value(1)        // json
   val ZEROF = Value(2)      // zeroformatter client only
 
-  def withNameOpt(key: Int): Option[Value] = values.find(_ == key)
+  def withNameOpt(key: Int): Option[Value] = Option(SERIALIZER(key))
 }
 
 object ClientMessage {
