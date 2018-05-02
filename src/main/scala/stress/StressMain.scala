@@ -5,7 +5,7 @@ import java.net.{InetAddress, InetSocketAddress}
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.util.{ByteString, Timeout}
-import chatapp.client.ClientActor
+import chatapp.client.{ClientActor, SERIALIZER}
 
 import scala.collection.mutable.HashMap
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -38,9 +38,9 @@ class TestActor(receiver:ActorRef, address: InetSocketAddress, name:String) exte
     
     def receive:Receive = {
       case ClientConnected => {
-        clientConnection ! SendMessage(s"identify|${name}")
+        clientConnection ! SendMessage(SERIALIZER.ROW, s"identify|${name}")
         Thread.sleep(2000)
-        clientConnection ! SendMessage("join|stress-room")
+        clientConnection ! SendMessage(SERIALIZER.ROW, "join|stress-room")
       }
       case ClientError(error) => {
         receiver ! Error(self, error)
@@ -50,9 +50,11 @@ class TestActor(receiver:ActorRef, address: InetSocketAddress, name:String) exte
         context stop self
       }
       case Work() =>{
-        val byteSize:Int = 10 //1024*1024*1
-        var message = ByteString(OneTimeCode(byteSize))
-        clientConnection ! SendMessage(s"chat|${message.utf8String}")
+//        val byteSize:Int = 10 //1024*1024*1
+//        var message = ByteString(OneTimeCode(byteSize))
+//        clientConnection ! SendMessage(SERIALIZER.ROW,s"chat|${message.utf8String}")
+        var message :ByteString = ByteString("hgIAAA4AAABEAAAAeQAAAIUAAACJAAAAjQAAAJEAAACZAAAA2QAAABkBAABRAQAAjQEAALoBAADqAQAAGgIAAE4CAAAxAAAAVW5pdHktZWRpdG9yLWQ1MzZiZWYyLTk2ZWQtNDMxZC1iOGU1LWUxNDZkMjA4ZjJmMsQ55VoAAAAA0MkgGMEBAABkAAAAAAB6RAAAAAAAAAAAQAAAAAEAAAABAAAAAAAAADAAAAABAAAADAAAAJJENgD/////BAAAAHRlc3QEAAAAAQAAAAIAAAADAAAABAAAAEAAAAABAAAAAQAAAAAAAAAwAAAAAQAAAAwAAACSRDYA/////wQAAAB0ZXN0BAAAAAAAgD8AAABAAABAQAAAgEA4AAAAAQAAAAEAAAAAAAAAKAAAAAEAAAAMAAAAkkQ2AP////8EAAAAdGVzdAEAAAAAAIA/AAAAQDwAAAABAAAAAQAAAAAAAAAsAAAAAQAAAAwAAACSRDYA/////wQAAAB0ZXN0AQAAAAAAgD8AAABAAACAQC0AAAABAAAAAQAAAAAAAAAdAAAAAQAAAAwAAACSRDYA/////wQAAAB0ZXN0ATAAAAABAAAAAQAAAAAAAAAgAAAAAQAAAAwAAACSRDYA/////wQAAAB0ZXN0AQAAADAAAAABAAAAAQAAAAAAAAAgAAAAAQAAAAwAAACSRDYA/////wQAAAB0ZXN0AACAPzQAAAABAAAAAQAAAAAAAAAkAAAAAQAAAAwAAACSRDYA/////wQAAAB0ZXN0AACAPwAAAEA4AAAAAQAAAAEAAAAAAAAAKAAAAAEAAAAMAAAAkkQ2AP////8EAAAAdGVzdAAAgD8AAABAAABAQA==","UTF-8")
+        clientConnection ! SendMessage(SERIALIZER.ZEROF, s"chat|${message.utf8String}")
       }
 
     }

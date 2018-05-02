@@ -35,8 +35,8 @@ object ClientMain extends App {
       system.terminate()
       false
     case _ =>
-      clientConnection ! SendMessage(message)
-      clientConnectionUDP ! SendMessage(message)
+      clientConnection ! SendMessage(SERIALIZER.ROW, message)
+      clientConnectionUDP ! SendMessage(SERIALIZER.ROW, message)
 
       true
 

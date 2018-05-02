@@ -58,9 +58,10 @@ class ServerActorUDP(actorSystem: ActorSystem) extends  Actor with ActorLogging{
 
   def ready(socket: ActorRef): Receive = {
     case Udp.Received(data, remote) ⇒
-      log.info(s"Received from ${remote}")
-      log.info(s"Response Received ${data}")
-      socket ! Udp.Send(data, remote) // example server echoes back
+      //udp work
+//      log.info(s"Received from ${remote}")
+//      log.info(s"Response Received ${data}")
+//      socket ! Udp.Send(data, remote) // example server echoes back
 
     case Udp.Unbind  ⇒ socket ! Udp.Unbind
     case Udp.Unbound ⇒ context.stop(self)

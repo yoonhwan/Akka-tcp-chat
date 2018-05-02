@@ -61,8 +61,8 @@ extends Actor with ActorLogging with Buffering{
       )
 
       context become buffer(connection, remainder) 
-    case SendMessage(message) =>
-      SendData(connection, message)
+    case SendMessage(serializer, message) =>
+      SendData(serializer, connection, message)
 
       if(sender != context.system.deadLetters)
       {
@@ -87,9 +87,9 @@ extends Actor with ActorLogging with Buffering{
   def ReceiveData(data:ByteString): Unit = {
 
     val _serializerIndex = SERIALIZER.withNameOpt(data.iterator.getByte) getOrElse SERIALIZER.ROW
+    _typeOfSerializer = _serializerIndex
 
     val rem = data drop 1 // Pop off 1byte (serializer type)
-
     _serializerIndex match {
       case SERIALIZER.ROW => {
         log.info(rem.utf8String)
@@ -98,17 +98,17 @@ extends Actor with ActorLogging with Buffering{
 
       }
       case SERIALIZER.ZEROF => {
-
+        log.info(rem.utf8String)
       }
     }
   }
 
-  def SendData(connection:ActorRef, message:String): Unit = {
+  def SendData(serializer:SERIALIZER.Value, connection:ActorRef, message:String): Unit = {
     implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
     val msg = ByteString(message,"UTF-8")
-    val serializedMsg = ByteString.newBuilder.putByte(_typeOfSerializer.id.asInstanceOf[Byte]).result() ++ msg
+    val serializedMsg = ByteString.newBuilder.putByte(serializer.id.asInstanceOf[Byte]).result() ++ msg
 
-    log.info("client : " + serializedMsg.toString())
+//    log.info("client : " + serializedMsg.toString())
     val packet = ByteString.newBuilder
       .putInt(serializedMsg.length)
       .result() ++ serializedMsg
@@ -137,7 +137,7 @@ class ClientActorUDP(address: InetSocketAddress, actorSystem: ActorSystem, stres
     case UdpConnected.Disconnect ⇒
       connection ! UdpConnected.Disconnect
     case UdpConnected.Disconnected ⇒ context.stop(self)
-    case SendMessage(msg) =>
+    case SendMessage(serializer, msg) =>
       connection ! UdpConnected.Send(ByteString(msg))
   }
 }

@@ -1,20 +1,15 @@
 package chatapp.client
 
-import scala.concurrent.duration._
-import akka.actor._
-import org.scalatest._
-import akka.testkit.{ TestProbe, TestKit }
-
-import java.net.InetSocketAddress
-import java.net.InetAddress
-import akka.io.Tcp._
-import chatapp.client.ClientMessage.SendMessage
-import akka.util.{Timeout,ByteString}
+import java.net.{InetAddress, InetSocketAddress}
 import java.nio.ByteOrder
-import scala.concurrent.Await
-import scala.util.{Success,Failure}
+
+import akka.actor._
+import akka.testkit.{TestKit, TestProbe}
+import akka.util.{ByteString, Timeout}
+import chatapp.client.ClientMessage.SendMessage
+import org.scalatest._
+
 import scala.util.Random
-import java.nio.ByteBuffer
 
 class TestActor(actor: ActorRef) extends Actor{
 
@@ -40,7 +35,6 @@ class ChatAppStressTest
 
   "The Router" must {
     "routes depending on speed" in {
-      import akka.pattern.ask
       import scala.concurrent.duration._
       implicit val timeout = Timeout(3 seconds)
       implicit val ec = system.dispatcher
@@ -52,8 +46,8 @@ class ChatAppStressTest
       val Server:String = system.settings.config.getString("akka.server.hostname")
       val clientConnection = system.actorOf(Props(new ClientActor(new InetSocketAddress(InetAddress.getByName(Server), Port), system, null)))
       expectNoMsg(2 seconds)
-      clientConnection ! SendMessage("~identify stress-client-00")
-      clientConnection ! SendMessage("~create stress-room")
+      clientConnection ! SendMessage(SERIALIZER.ROW, "~identify stress-client-00")
+      clientConnection ! SendMessage(SERIALIZER.ROW, "~create stress-room")
       var a = 10;
 
       // println(ByteString("abc"))
@@ -80,13 +74,13 @@ class ChatAppStressTest
 
       // do {
       //   var message = ByteString(OneTimeCode(1024*1024*1))
-      //   clientConnection ! SendMessage(message.utf8String)
+      //   clientConnection ! SendMessage(SERIALIZER.ROW, message.utf8String)
       //   a = a + 1;
       // }
       // while( true )
 
       var message = ByteString(OneTimeCode(1024*1024*1))
-      system.scheduler.schedule(2 seconds, 200 millis, clientConnection, new SendMessage(message.utf8String))
+      system.scheduler.schedule(2 seconds, 200 millis, clientConnection, new SendMessage(SERIALIZER.ROW, message.utf8String))
     }
   }
 }

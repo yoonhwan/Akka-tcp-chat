@@ -51,7 +51,7 @@ class DynamicGroupRouter(roomName:String) extends Actor with ActorLogging{
                 case e:Exception => e.printStackTrace
             }
         }
-        case m @ SendRoomClientMessage(roomName, clientActorName, message) => {
+        case m @ SendRoomClientMessage(serializer, roomName, clientActorName, message) => {
             try {
                 ActiveClients.foreach(f => {
                     context.actorSelection(f._1) ! m

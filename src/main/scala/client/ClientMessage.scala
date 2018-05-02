@@ -12,9 +12,14 @@ object SERIALIZER extends Enumeration {
   def withNameOpt(key: Int): Option[Value] = Option(SERIALIZER(key))
 }
 
+class SERIALIZER {
+
+
+}
+
 object ClientMessage {
 
-  case class SendMessage(message: String)
+  case class SendMessage(serializer:SERIALIZER.Value, message: String)
   case object ClientConnected
   case class ClientError(error: String)
 }

@@ -73,25 +73,25 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       case SendServerMessage(message) => {
         send(message, true)
       }
-      case SendAllClientMessage(clientActorName, message) => {
+      case SendAllClientMessage(serializer, clientActorName, message) => {
         if(clientActorName != userIdentify)
-          send(s"from <$clientActorName> user message : $message", false)
+          sendFromRoom(s"from <$clientActorName> user message : $message", false, serializer)
       }
-      case SendRoomClientMessage(roomName, clientActorName, message) => {
+      case SendRoomClientMessage(serializer, roomName, clientActorName, message) => {
         if(roomName.length <= 0)
-          send("Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", true)
+          sendFromRoom("Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", true, serializer)
         else
-//          if(clientActorName != userIdentify)
+          if(clientActorName != userIdentify)
 //            send(s"from <$clientActorName> user message at room <$roomName> : $message", false)
-          send(s"$message", false)
+            sendFromRoom(s"$message", false, serializer)
       }
 
       case Received(data) =>
+//        log.info(s"recv message : ${data.utf8String.length} : data = ${data.utf8String}")
         val msg = buf ++ data
         val (pkt, remainder) = getPacket(msg)
         // Do something with your packet
         pkt.foreach(f=>ProccessData(ReceiveData(f)))
-//        log.info(s"recv message : ${data.utf8String.length} : dc = ${pkt.length} : rc = ${remainder.length} : data = ${data.utf8String}")
         context become writing(remainder) 
 
       case GetClientInfomation =>
@@ -171,14 +171,14 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         if(support_chat_all_users)
         {
           if(roomName.length <= 0)
-            supervisor ! SendAllClientMessage(userIdentify, message)
+            supervisor ! SendAllClientMessage(_typeOfSerializer, userIdentify, message)
           else
-            supervisor ! SendRoomClientMessage(roomName, userIdentify, message)
+            supervisor ! SendRoomClientMessage(_typeOfSerializer, roomName, userIdentify, message)
         }else {
           if(roomName.length <= 0)
             send("Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", serverMessage = true)
           else
-            supervisor ! SendRoomClientMessage(roomName, userIdentify, message)
+            supervisor ! SendRoomClientMessage(_typeOfSerializer, roomName, userIdentify, message)
         }
       }
     }
@@ -281,18 +281,33 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       if(context==null || connection==null) {
 
       }else if (serverMessage) {
-        context.actorSelection(connection.path) ? Write(makePacket("[SERVER]: " + message))
+        context.actorSelection(connection.path) ? Write(makePacket(SERIALIZER.ROW, "[SERVER]: " + message, true))
       } else {
-        context.actorSelection(connection.path) ? Write(makePacket(message))
+        context.actorSelection(connection.path) ? Write(makePacket(_typeOfSerializer, message))
       }
     }
 
-    def makePacket(message: String): ByteString = {
+    def sendFromRoom(message: String, serverMessage: Boolean = false, typeOfSerializer:SERIALIZER.Value) = {
+      if(context==null || connection==null) {
+
+      }else if (serverMessage) {
+        context.actorSelection(connection.path) ? Write(makePacket(typeOfSerializer, "[SERVER]: " + message, true))
+      } else {
+        context.actorSelection(connection.path) ? Write(makePacket(typeOfSerializer, message))
+      }
+    }
+
+    def makePacket(typeOfSerializer:SERIALIZER.Value, message: String, serverMessage: Boolean = false): ByteString = {
       implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
 
 //      log.info(s"1: ${_typeOfSerializer.id.asInstanceOf[Byte]}, 2:${message},  3: ${ByteString(message)}")
       var msg = ByteString(message,"UTF-8")
-      val serializedMsg = ByteString.newBuilder.putByte(_typeOfSerializer.id.asInstanceOf[Byte]).result() ++ msg
+      var serializedMsg:ByteString = ByteString()
+      if(serverMessage) {
+        serializedMsg = ByteString.newBuilder.putByte(SERIALIZER.ROW.id.asInstanceOf[Byte]).result() ++ msg
+      }else {
+        serializedMsg = ByteString.newBuilder.putByte(typeOfSerializer.id.asInstanceOf[Byte]).result() ++ msg
+      }
       val packet = ByteString.newBuilder
         .putInt(serializedMsg.length)
         .result() ++ serializedMsg

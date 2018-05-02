@@ -104,11 +104,11 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             globalRoom ! msg
         }
 
-        case SendAllClientMessage(clientActorName, message) => {
-            globalRoom ! SendAllClientMessage(clientActorName, message)
+        case SendAllClientMessage(serializer, clientActorName, message) => {
+            globalRoom ! SendAllClientMessage(serializer, clientActorName, message)
         }
 
-        case m @ SendRoomClientMessage(roomName, clientActorName, message) => {
+        case m @ SendRoomClientMessage(serializer, roomName, clientActorName, message) => {
             val room:ActorRef = getActiveRoom(roomName)
             if(room != null)
             {
