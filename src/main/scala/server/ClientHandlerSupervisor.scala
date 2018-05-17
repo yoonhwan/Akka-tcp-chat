@@ -37,7 +37,11 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
     val ClientIdentities = HashMap.empty[String, String]
     val ActiveRooms = HashMap.empty[String, ActorRef]
     
-    val globalRoom = context.actorOf(DynamicGroupRouter.props("globalRoom"), "globalRoom")
+    var globalRoom = context.actorOf(DynamicGroupRouter.props("globalRoom"), "globalRoom")
+
+    override def postStop(): Unit = {
+        context.stop(globalRoom)
+    }
 
     override val supervisorStrategy =
     OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
@@ -251,5 +255,9 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         }
     }
     // override default to kill all children during restart
-    override def preRestart(cause: Throwable, msg: Option[Any]) {}
+    override def preRestart(cause: Throwable, msg: Option[Any]): Unit = {
+
+    }
+
+
 }

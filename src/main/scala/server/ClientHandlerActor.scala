@@ -59,14 +59,19 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         stopProc()
       case Terminated(obj) => 
         log.info(obj + " : Terminated")
+        stopProc()
       case Tcp.Aborted =>
         log.info("connection aborted")
+        stopProc()
       case Tcp.ConfirmedClosed =>
         log.info("connection ConfirmedClosed")
+        stopProc()
       case Tcp.Closed =>
         log.info("connection Closed")
+        stopProc()
       case _: Unbound =>
         log.info("connection Unbound")
+        stopProc()
     }
     
     def writing(buf: ByteString): Receive = common orElse {   
@@ -87,7 +92,13 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       }
 
       case Received(data) =>
-//        log.info(s"recv message : ${data.utf8String.length} : data = ${data.utf8String}")
+
+//        implicit val byteOrder: ByteOrder = ByteOrder.BIG_ENDIAN
+//        val header = data.iterator.getInt
+//        val temp = data drop 4
+//        val serial = temp.iterator.getByte.toInt
+//        log.info(s"recv message : ${data.utf8String.length} header : ${header} type : ${serial} data = ${data.utf8String} byteData = ${data}")
+
         val msg = buf ++ data
         val (pkt, remainder) = getPacket(msg)
         // Do something with your packet
@@ -317,20 +328,31 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     def ReceiveData(data:ByteString): ByteString = {
 
-      _typeOfSerializer = SERIALIZER.withNameOpt(data.iterator.getByte.toInt) getOrElse SERIALIZER.ROW
-//      log.info(s"ReceiveData : ${data.iterator.getByte.toInt}, _typeOfSerializer : ${_typeOfSerializer}, len : ${data.utf8String}, data : ${data}")
-      val rem = data drop 1 // Pop off 1byte (serializer type)
+//      log.info(s"ReceiveData : ${data.iterator.getByte.toInt}, len : ${data.utf8String}, data : ${data}")
 
-      _typeOfSerializer match {
-        case SERIALIZER.ROW => {
-          rem
+      try {
+        _typeOfSerializer = SERIALIZER.withNameOpt(data.iterator.getByte.toInt) getOrElse SERIALIZER.ROW
+
+        val rem = data drop 1 // Pop off 1byte (serializer type)
+
+        _typeOfSerializer match {
+          case SERIALIZER.ROW => {
+            rem
+          }
+          case SERIALIZER.JSON => {
+            ByteString("not support yet", "UTF-8")
+          }
+          case SERIALIZER.ZEROF => {
+            rem
+          }
         }
-        case SERIALIZER.JSON => {
-          ByteString("not support yet", "UTF-8")
-        }
-        case SERIALIZER.ZEROF => {
-          rem
+      } catch {
+        case e:Exception => {
+          e.printStackTrace
+          log.info(s"ReceiveData : ${data.iterator.getByte.toInt}, len : ${data.utf8String}, data : ${data}")
+          null
         }
       }
+
     }
   }
