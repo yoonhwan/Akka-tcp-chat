@@ -129,7 +129,6 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         }
 
         case GetAllClientIdentifier => {
-
             val redis = RedisSupportActor.redis.getOrElse(null)
             var init = 0
             var count = 0
@@ -138,12 +137,9 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
               while(loop) {
                 val keys = redis.scan(init,Option(100),Option("active:user:desirename:*"))
                 Await.result(for {s <- keys} yield {
-                  log.info(s"GetAllClientIdentifier init = " + init)
                   init = s.index
                   count += s.data.length
-                  log.info(s"GetAllClientIdentifier data = " + count)
                 }, 5 seconds)
-
                 if(init == 0)
                   loop = false
               }
