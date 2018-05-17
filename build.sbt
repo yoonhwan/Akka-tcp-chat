@@ -16,6 +16,9 @@ lazy val root = (project in file(".")).
       "com.typesafe.akka" %%  "akka-multi-node-testkit" % akkaVersion,
       "com.typesafe.akka" %%  "akka-contrib"            % akkaVersion,
       "com.propensive" %% "rapture-base" % "2.0.0-M9",
+
+      "com.github.etaty" %% "rediscala" % "1.8.0",
+
       "com.typesafe.akka" %%  "akka-testkit"            % akkaVersion  % "test",
 
     )

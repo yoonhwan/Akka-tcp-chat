@@ -4,8 +4,8 @@ import akka.pattern.ask
 import akka.util.Timeout
 
 import scala.collection.mutable.HashMap
-import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{Await,Future}
 import scala.util.{Failure, Success}
 object ClientHandlerSupervisor {
     def props(): Props = Props(classOf[ClientHandlerSupervisor])
@@ -33,12 +33,12 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
 
     import scala.concurrent.duration._
     implicit val timeout = Timeout(5 seconds)
-    
-    val ClientIdentities = HashMap.empty[String, String]
-    val ActiveRooms = HashMap.empty[String, ActorRef]
-    
-    var globalRoom = context.actorOf(DynamicGroupRouter.props("globalRoom"), "globalRoom")
 
+    val ActiveRooms = HashMap.empty[String, ActorRef]
+    val ClientIdentities = HashMap.empty[String, String]
+
+    var globalRoom = context.actorOf(DynamicGroupRouter.props("globalRoom"), "globalRoom")
+    val redisSupportActor = context.actorOf(RedisSupportActor.props(), "RedisSupportActor")
     override def postStop(): Unit = {
         context.stop(globalRoom)
     }
@@ -91,6 +91,15 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         case SetIdentifier(actorname, desirename) => {
             val localsender = sender()
             // log.info("SetIdentifier : [" + actorname + " : " + desirename + "]")
+
+            val redis = RedisSupportActor.redis.getOrElse(null)
+            if(redis != null)
+            {
+                val set = redis.set("activeuser:"+actorname, desirename)
+                val r :Future[Boolean] = for { s <- set } yield {s}
+                Await.result(r, 5 seconds)
+            }
+
             ClientIdentities += (actorname -> desirename)
             val myname = getClientname(actorname)
             if(myname.length > 0)
