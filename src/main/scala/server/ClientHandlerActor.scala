@@ -9,6 +9,7 @@ import akka.io.Tcp
 import akka.pattern.ask
 import akka.util.{ByteString, CompactByteString, Timeout}
 import chatapp.client.SERIALIZER
+import server.RoomSupervisor.GetAllChatRoomInfo
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -36,7 +37,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     implicit val timeout = Timeout(5 seconds)
     val CommandCharacter = '|'
     var userIdentify = ""
-    var roomName = ""
+    var roomInfo:Tuple2[String,ActorRef] = Tuple2("",null)
     var support_chat_all_users:Boolean = false
     var _typeOfSerializer = SERIALIZER.ROW
 
@@ -106,10 +107,10 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         context become writing(remainder) 
 
       case GetClientInfomation =>
-        sender() ! ClientInfomation(userIdentify, remote, roomName)
+        sender() ! ClientInfomation(userIdentify, remote, roomInfo._1)
 
-      case DynamicGroupRouter.DestroyGroupRouter =>
-        roomName = ""
+      case DefaultRoomActor.DestroyDefaultRoomActor =>
+        roomInfo = Tuple2("",null)
 
       case SendErrorMessage(error) =>
         send(s"[ERROR] ${error}", false)
@@ -121,7 +122,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def stopProc(): Unit = {
-      if(roomName.length>0) {
+      if(roomInfo._1.length>0) {
         exitChatRoom(self)
       }
 
@@ -181,15 +182,15 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       } else {
         if(support_chat_all_users)
         {
-          if(roomName.length <= 0)
+          if(roomInfo._1.length <= 0)
             supervisor ! SendAllClientMessage(_typeOfSerializer, userIdentify, message)
           else
-            supervisor ! SendRoomClientMessage(_typeOfSerializer, roomName, userIdentify, message)
+            roomInfo._2 ! SendRoomClientMessage(_typeOfSerializer, roomInfo._1, userIdentify, message)
         }else {
-          if(roomName.length <= 0)
+          if(roomInfo._1.length <= 0)
             send("Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", serverMessage = true)
           else
-            supervisor ! SendRoomClientMessage(_typeOfSerializer, roomName, userIdentify, message)
+            roomInfo._2 ! SendRoomClientMessage(_typeOfSerializer, roomInfo._1, userIdentify, message)
         }
       }
     }
@@ -206,7 +207,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
             case Success(result_sub) => {
               userIdentify = result_sub.asInstanceOf[String]
               send("Successfully set your identity to " + userIdentify, serverMessage = true)
-              if(roomName.length>0) {
+              if(roomInfo._1.length>0) {
                 exitChatRoom(self)
               }
             }
@@ -244,15 +245,15 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def createChatRoom(actor:ActorRef, text:String):Unit = {
-      if(roomName.length > 0) {
-        send(s"Already joined chat room : $roomName, if you need create room. exit room first.<exit>", serverMessage = true)
+      if(roomInfo._1.length > 0) {
+        send(s"Already joined chat room : $roomInfo._1, if you need create room. exit room first.<exit>", serverMessage = true)
       }else {
         val name = text
         supervisor ? MakeChatRoom(actor, name) onComplete {
           case Success(result) => {
-            roomName = result.asInstanceOf[String]
-            if(roomName.length > 0){
-              send(s"Successfully create the chatroom($roomName).", serverMessage = true)
+            roomInfo = result.asInstanceOf[Tuple2[String, ActorRef]]
+            if(roomInfo._1.length > 0){
+              send(s"Successfully create the chatroom($roomInfo._1).", serverMessage = true)
             }
           }
           case Failure(t) => send(s"There is already an room with this roomname! [name]!, if you need join the room use <join>. Also you can show all list rooms <chatroom>", serverMessage = true)
@@ -264,9 +265,9 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       val name = text
       supervisor ? JoinChatRoom(actor, name) onComplete {
         case Success(result) => {
-          roomName = result.asInstanceOf[String]
-          if(roomName.length > 0){
-            send(s"Successfully join the chatroom($roomName).", serverMessage = true)
+          roomInfo = result.asInstanceOf[Tuple2[String, ActorRef]]
+          if(roomInfo._1.length > 0){
+            send(s"Successfully join the chatroom($roomInfo._1).", serverMessage = true)
           }
         }
         case Failure(t) => send("There is not exist an room name! Also you can show all list rooms <chatroom>", serverMessage = true)
@@ -275,13 +276,13 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     def exitChatRoom(actor:ActorRef):Unit = {
 
-      if(roomName.length <= 0) {
+      if(roomInfo._1.length <= 0) {
         send(s"Does not joined any room. doesn't joined any rooms", serverMessage = true)
       }else {
-        supervisor ? ExitChatRoom(actor, roomName) onComplete {
+        supervisor ? ExitChatRoom(actor, roomInfo._1) onComplete {
           case Success(result) => {
-            send(s"Successfully exit the chatroom($roomName).", serverMessage = true)
-            roomName = ""
+            send(s"Successfully exit the chatroom($roomInfo._1).", serverMessage = true)
+            roomInfo = Tuple2("",null)
           }
           case Failure(t) => t.printStackTrace
         }

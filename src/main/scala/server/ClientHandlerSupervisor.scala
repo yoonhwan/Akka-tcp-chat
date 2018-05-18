@@ -3,7 +3,6 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.pattern.ask
 import akka.util.Timeout
 
-import scala.collection.mutable.HashMap
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
@@ -20,7 +19,6 @@ object ClientHandlerSupervisor {
     case class MakeChatRoom(actor: ActorRef, roomName: String)
     case class JoinChatRoom(actor: ActorRef, roomName: String)
     case class ExitChatRoom(actor: ActorRef, roomName: String)
-    case object GetAllChatRoomInfo
     case object ClearAllChatRoom
 
 }
@@ -28,17 +26,23 @@ object ClientHandlerSupervisor {
 class ClientHandlerSupervisor extends Actor with ActorLogging{
     import ClientHandlerMessages._
     import ClientHandlerSupervisor._
-    import DynamicGroupRouter._
+    import DefaultRoomActor._
     import akka.actor.OneForOneStrategy
     import akka.actor.SupervisorStrategy._
+    import server.RoomSupervisor
+    import server.RoomSupervisor._
 
     import scala.concurrent.duration._
     implicit val timeout = Timeout(5 seconds)
 
-    val ActiveRooms = HashMap.empty[String, ActorRef]
+    val timeOut = 5 seconds
+    val roomSupervisor = context.actorOf(RoomSupervisor.props(), "roomSupervisor")
 
-    var globalRoom = context.actorOf(DynamicGroupRouter.props("globalRoom"), "globalRoom")
-    val redisSupportActor = context.actorOf(RedisSupportActor.props(), "RedisSupportActor")
+    var globalRoom:ActorRef = ActorRef.noSender
+    override def preStart(): Unit = {
+        super.preStart()
+        globalRoom = createRoom(null, "globalRoom")._2
+    }
     override def postStop(): Unit = {
         context.stop(globalRoom)
     }
@@ -51,11 +55,14 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         case _: Exception                ⇒ Escalate
     }
 
-    def receive = {
+    def receive: Receive = {
         case p: Props => {
             val actor = context.actorOf(p)
             sender() ! GeneratedClientHandlerActor(actor)
-            globalRoom ! AddRouteeActor(actor)
+            val desirename = getClientname(actor.path.name)
+
+            log.info(s"Props ${desirename}")
+            globalRoom ! AddRouteeActor(actor, desirename)
             context watch actor
         }
         case Terminated(obj) => 
@@ -64,7 +71,7 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         case DisconnectedClientHandlerActor(obj) => {
             // log.info("DisconnectedClientHandlerActor : " + obj.path.name)
             context.stop(obj)
-            globalRoom ! RemoveRouteeActor(obj)
+            globalRoom ! RemoveRouteeActor(obj, "")
             val actorname = getClientname(obj.path.name)
             if(actorname.length >= 0) {
                 val redis = RedisSupportActor.redis.getOrElse(null)
@@ -156,60 +163,40 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         }
 
         case m @ SendRoomClientMessage(serializer, roomName, clientActorName, message) => {
-            val room:ActorRef = getActiveRoom(roomName)
-            if(room != null)
+            val room = getActiveRoom(roomName)
+            if(room._2 != null)
             {
-                room ! m
+                room._2 ! m
             }else   {
                 sender ! akka.actor.Status.Failure(new Exception("exitchatroom error"))
                 context.actorSelection(clientActorName)  ! SendErrorMessage("exitchatroom error")
             }
         }
-        case GetAllChatRoomInfo => {
-            if (ActiveRooms.size == 0) 
-                sender ! "norooms (0 rooms total)."
-            else {
-                val map = ActiveRooms map{
-                    case (key, value) => (key -> context.actorSelection(value.path) ? GetAllClientIdentifier)
-                }
-                val fut = Util.sequenceMap(map)
-                
-                fut onComplete{
-                    case Success(m) => //log.info("future test : " + m)
-                    case Failure(ex) => ex.printStackTrace()
-                }
-                val result = Await result (fut, 2 seconds)
 
-                var roomDataTotal = scala.collection.mutable.ListBuffer[String]()
-                result foreach(value => {
-                    val data = value._2.asInstanceOf[String]
-                    roomDataTotal += s"{roomName:${value._1}:{userNames:[${data}]}"
-                })
-                // log.info(roomDataTotal.toList.reduce(_ + ", " + _) + " (" + roomDataTotal.size + " rooms total).")
-                sender ! roomDataTotal.toList.reduce(_ + ", " + _) + " (" + roomDataTotal.size + " rooms total)."
-            }
+        case GetAllChatRoomInfo => {
+            val f = roomSupervisor ? GetAllChatRoomInfo
+            val result = Await.result(f, timeOut)
+            sender ! result.asInstanceOf[String]
         }
 
         case MakeChatRoom(actor, roomName) => {
             
-            val room:ActorRef = getActiveRoom(roomName)
-            if(room != null)
+            val room = getActiveRoom(roomName)
+            if(room._2 != null)
             {
                 sender() ! akka.actor.Status.Failure(new Exception("already exist chatroom"))
                 context.actorSelection(actor.path.name) ! SendErrorMessage("already exist chatroom")
             }else {
-                createRoom(actor,roomName)
-                sender ! roomName
+                sender ! createRoom(actor,roomName)
             }
         }
 
         case JoinChatRoom(actor, roomName) => {
             val localsender = sender()
-            val room:ActorRef = getActiveRoom(roomName)
-            if(room != null)
+            val room = getActiveRoom(roomName)
+            if(room._2 != null)
             {
-                joinTheRoom(actor,roomName)
-                sender ! roomName
+                sender ! joinTheRoom(actor,room)
                 val actorname = getClientname(actor.path.name)
                 if(actorname.length > 0)
                     self ! SendServerMessage(s"<${actorname}> has joined the <$roomName> chatroom.")
@@ -222,19 +209,21 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
 
         case ExitChatRoom(actor, roomName) => {
             val localsender = sender()
-            val room:ActorRef = getActiveRoom(roomName)
+            val room = getActiveRoom(roomName)
             val actorname = getClientname(actor.path.name)
-            if(room != null)
+            if(actorname.length <= 0)
             {
-                room ? GetRoomUserCount onComplete {
+              localsender ! ""
+            }
+            else if(room._2 != null)
+            {
+                room._2 ? GetRoomUserCount onComplete {
                     case Success(result) => {
                         val count = result.asInstanceOf[Int]
-                        removeActiveRoomAndDestroy(actor, roomName, count)
+                        removeActiveRoomAndDestroy(actor, room, count)
                         localsender ! s"Successfully exit the chatroom($roomName) remain user count : ${count-1}."
-
                         if(actorname.length > 0)
                             self ! SendServerMessage(s"<${actorname}> has left the <$roomName> chatroom. exit chat")
-                
                     }
                     case Failure(t) => localsender ! akka.actor.Status.Failure(t)
                 }
@@ -244,21 +233,18 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             }
         }
         case ClearAllChatRoom => {
-            ActiveRooms.foreach(f => {
-                val room = f._2
-                context.actorSelection(room.path) ? DestroyGroupRouter onComplete {
-                    case Success(result) => {
-                        context stop room
-                    }
-                    case Failure(t) => t.printStackTrace
-                }
-            })
-            ActiveRooms.clear
+            roomSupervisor ! ClearAllDefaultRoom
         }
     }
 
-    def getActiveRoom(roomName:String):ActorRef = {
-        ActiveRooms get roomName getOrElse null
+    def getActiveRoom(roomName:String) = {
+      val future = roomSupervisor ? GetActiveRoom(roomName)
+
+      val roomInfo = Await.result(for {f <- future} yield {
+        f.asInstanceOf[Tuple2[String,ActorRef]]
+      }, timeOut)
+
+      roomInfo
     }
 
     def getClientname(name:String):String = {
@@ -281,35 +267,33 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
     }
     
     def createRoom(actor:ActorRef, roomName:String) = {
-        ActiveRooms += (roomName -> context.actorOf(DynamicGroupRouter.props(roomName), roomName))
-        val room:ActorRef = getActiveRoom(roomName)
-        if(room != null)
-        {
-            getActiveRoom(roomName) ! AddRouteeActor(actor)
-        }
+
+        val future = roomSupervisor ? CreateDefaultRoom(actor, roomName)
+
+        val roomInfo = Await.result(for {f <- future} yield {
+            f.asInstanceOf[Tuple2[String,ActorRef]]
+        }, timeOut)
+
+        if(actor != null)
+          joinTheRoom(actor, roomInfo)
+
+        roomInfo
     }
 
-    def joinTheRoom(actor:ActorRef, roomName:String) = {
-        val room:ActorRef = getActiveRoom(roomName)
-        getActiveRoom(roomName) ! AddRouteeActor(actor)
+    def joinTheRoom(actor:ActorRef, roomInfo:Tuple2[String, ActorRef]) = {
+        val desirename = getClientname(actor.path.name)
+        roomInfo._2 ! AddRouteeActor(actor, desirename)
+        roomInfo
     }
 
-    def removeActiveRoomAndDestroy(actor:ActorRef, roomName:String, count:Int) = {
-        val room:ActorRef = getActiveRoom(roomName)
-        if(room != null)
+    def removeActiveRoomAndDestroy(actor:ActorRef, room:Tuple2[String,ActorRef], count:Int) = {
+        if(room._2 != null)
         {
-            room ! RemoveRouteeActor(actor)
+            val desirename = getClientname(actor.path.name)
+            room._2 ! RemoveRouteeActor(actor,desirename)
             
             if (count-1 <= 0)
-            {
-                room ? DestroyGroupRouter onComplete {
-                    case Success(result) => {
-                        context stop room
-                        ActiveRooms -= roomName
-                    }
-                    case Failure(t) => t.printStackTrace
-                }
-            }
+              roomSupervisor ! DestroyDefaultRoom(room)
         }
     }
     // override default to kill all children during restart
