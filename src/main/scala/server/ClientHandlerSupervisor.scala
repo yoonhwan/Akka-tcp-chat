@@ -181,30 +181,29 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
 
         case MakeChatRoom(actor, roomName) => {
             
-            val room = getActiveRoom(roomName)
-            if(room._2 != null)
+            var room = getActiveRoom(roomName)
+            if(room._2 == null)
             {
-                sender() ! akka.actor.Status.Failure(new Exception("already exist chatroom"))
-                context.actorSelection(actor.path.name) ! SendErrorMessage("already exist chatroom")
-            }else {
-                sender ! createRoom(actor,roomName)
+              room = createRoom(actor,roomName)
             }
+
+            if(actor != null)
+              joinTheRoom(actor, room)
+
+            sender ! room
         }
 
         case JoinChatRoom(actor, roomName) => {
             val localsender = sender()
-            val room = getActiveRoom(roomName)
-            if(room._2 != null)
-            {
-                sender ! joinTheRoom(actor,room)
-                val actorname = getClientname(actor.path.name)
-                if(actorname.length > 0)
-                    self ! SendServerMessage(s"<${actorname}> has joined the <$roomName> chatroom.")
+            var room = getActiveRoom(roomName)
 
-            }else   {
-                localsender ! akka.actor.Status.Failure(new Exception("not exist room error"))
-                context.actorSelection(actor.path.name) ! SendErrorMessage("not exist room error")
-            }
+            if(room._2 == null)
+              room = createRoom(actor,roomName)
+
+            sender ! joinTheRoom(actor,room)
+            val actorname = getClientname(actor.path.name)
+            if(actorname.length > 0)
+                self ! SendServerMessage(s"<${actorname}> has joined the <$roomName> chatroom.")
         }
 
         case ExitChatRoom(actor, roomName) => {
@@ -273,9 +272,6 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         val roomInfo = Await.result(for {f <- future} yield {
             f.asInstanceOf[Tuple2[String,ActorRef]]
         }, timeOut)
-
-        if(actor != null)
-          joinTheRoom(actor, roomInfo)
 
         roomInfo
     }

@@ -21,12 +21,17 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
     import DefaultRoomActor._
     val timeout = 5 seconds
     implicit val t = Timeout(timeout)
+    val remoteConfig = context.system.settings.config.getConfig("akka").getConfig("remote").getConfig("netty.tcp")
+    val actorHost = remoteConfig.getString("hostname")
+    val actorPort = remoteConfig.getInt("port")
+    val workerName = self.path.name
+    val actorPath = "akka.tcp://" + context.system.name + "@" + actorHost + ":" + actorPort + "/user/" + workerName
 
     val ActiveClients = scala.collection.mutable.HashMap.empty[ActorPath, ActorRef]
     val redis = RedisSupportActor.redis.getOrElse(null)
     if(redis != null)
     {
-        val set = redis.set("active:room:"+roomName, "")
+        val set = redis.set(s"active:room:${roomName}:None", "")
         val r :Future[Boolean] = for {
             s1 <- set
         } yield {s1}
@@ -35,6 +40,7 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
           case Failure(e) => e.printStackTrace
         }
         Await.result(r, timeout)
+        RedisSupportActor.inst ! RedisSupportActor.PSubscribe(onPMessage, s"active:room:${roomName}:*")
     }
 
     //restart child
@@ -70,6 +76,9 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
                 ActiveClients.foreach(f => {
                     context.actorSelection(f._1) ! server
                 })
+
+                val data = s"${actorPath }|${chatapp.client.SERIALIZER.ROW.id}|server|${message}"
+                RedisSupportActor.inst ! RedisSupportActor.Publish(s"active:room:globalRoom:server", data)
             } catch {
                 case e:Exception => e.printStackTrace
             }
@@ -80,6 +89,9 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
                 ActiveClients.foreach(f => {
                     context.actorSelection(f._1) ! all
                 })
+
+                val data = s"${actorPath }|${chatapp.client.SERIALIZER.ROW.id}|${clientActorName}|${message}"
+                RedisSupportActor.inst ! RedisSupportActor.Publish(s"active:room:globalRoom:server", data)
             } catch {
                 case e:Exception => e.printStackTrace
             }
@@ -89,6 +101,9 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
                 ActiveClients.foreach(f => {
                     context.actorSelection(f._1) ! m
                 })
+
+                val data = s"${actorPath }|${serializer.id}|${clientActorName}|${message}"
+                RedisSupportActor.inst ! RedisSupportActor.Publish(s"active:room:${roomName}:${clientActorName}", data)
             } catch {
                 case e:Exception => e.printStackTrace
             }
@@ -154,7 +169,39 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
                     s1 <- del
                 } yield {s1}
                 Await.result(r, 5 seconds)
+
+                RedisSupportActor.inst ! RedisSupportActor.PunSubscribe(s"active:room:${roomName}:*")
             }
+        }
+    }
+
+    def onPMessage(pmessage: String) {
+        var serial = chatapp.client.SERIALIZER.ROW
+        var senderPath = ""
+        var username = "test"
+        var message= pmessage
+        if(pmessage.contains('|') == true) {
+          val data = pmessage.split('|')
+
+          if(data(0)!=actorPath)
+            senderPath = data(0)
+
+          try {
+            serial = chatapp.client.SERIALIZER.withNameOpt(data(1).toInt) getOrElse chatapp.client.SERIALIZER.ROW
+          } catch {
+            case e:Exception => {
+              e.printStackTrace
+              null
+            }
+          }
+          username = data(2)
+          message = data(3)
+        }
+
+        if(senderPath != "") {
+          ActiveClients.foreach(f => {
+            context.actorSelection(f._1) ! SendRoomClientMessage(serial, roomName, username, message)
+          })
         }
     }
 

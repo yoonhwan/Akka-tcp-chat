@@ -1,18 +1,19 @@
 package chatapp.server
 
 
-import akka.actor.{Actor, ActorIdentity, Props}
+import akka.actor.{Actor, ActorIdentity, ActorRef, Props}
 import akka.event.Logging
 import akka.io.Tcp.Connected
+import akka.util.Timeout
 import redis._
 import redis.api.pubsub.{Message, PMessage}
 import redis.commands.TransactionBuilder
 import redis.protocol.{Bulk, MultiBulk, Status}
 
 import scala.collection.mutable.HashMap
-import scala.concurrent.{Await, Future}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
 
 object RedisSupportActor {
@@ -27,22 +28,28 @@ object RedisSupportActor {
   case class PSubscribe(callback: scala.Function1[String, scala.Unit], channels : String*)
   case class UnSubscribe(channels : String*)
   case class PunSubscribe(channels : String*)
+  case class Publish(channel:String, message: String)
 
   case class RedisFunction1()
   case class RedisFunction2()
   case class RedisFunction3(operations: (TransactionBuilder) => Unit)
 
   var redis : Option[RedisClientMasterSlaves] = None
+  var redisPubSub: Option[RedisPubSub] = None
+
+  var inst : ActorRef = null
 }
 
 class RedisSupportActor extends Actor
 {
   import RedisSupportActor._
   val timeOut = 5 second
+  implicit val t = Timeout(timeOut)
   val log = Logging(context.system, this)
   val Port:Int = context.system.settings.config.getInt("akka.redis.port")
   val Server:String = context.system.settings.config.getString("akka.redis.hostname")
 
+  RedisSupportActor.inst = self
 //  val remoteConfig = context.system.settings.config.getConfig("akka").getConfig("remote").getConfig("netty.tcp")
 //  val actorHost = remoteConfig.getString("hostname")
 //  val actorPort = remoteConfig.getInt("port")
@@ -57,17 +64,20 @@ class RedisSupportActor extends Actor
   val pmessageCallbacks = HashMap.empty[String, scala.Function1[String, scala.Unit]]
 
   ConnectRedis(Server,Port)
-  var redisPubSub: RedisPubSub = null
   def RedisStop(redisClientMasterSlaves: RedisClientMasterSlaves): Unit =
   {
     redisClientMasterSlaves.masterClient.stop()
     redisClientMasterSlaves.slavesClients.stop()
 
-    if(redisPubSub != null)
-      redisPubSub.stop()
+    if(redisPubSub.getOrElse(null) != null) {
+      redisPubSub.get stop()
+      redisPubSub = Option(null)
+    }
+
     messageCallbacks.clear()
     pmessageCallbacks.clear()
   }
+
   override def receive: Receive = {
     case ActorIdentity(selection, ref) => {
 
@@ -87,63 +97,39 @@ class RedisSupportActor extends Actor
       }
     }
     case PubSubCreate() => {
-      redisPubSub = RedisPubSub(
-        Server,
-        Port,
-        channels = Seq(),
-        patterns = Seq(),
-        onMessage = onMessage,
-        onPMessage = onPMessage
-      )
-
+      sender ! createPubsub()
 //      redisPubSub.stop()
     }
 
     case Subscribe(callback, channels) => {
-      if(redisPubSub == null) {
-        val ex = new Exception(s"PubSubCreate first instance is null!!")
-        context.system.actorSelection(sender.path) ! Failure(ex)
-        throw ex
-      }
-      else
-      {
-        messageCallbacks.put(channels,callback)
-        redisPubSub.subscribe(channels)
-      }
+      createPubsub()
+      messageCallbacks.put(channels,callback)
+      redisPubSub.get.subscribe(channels)
     }
     case PSubscribe(callback, channels) => {
-      if(redisPubSub == null) {
-        val ex = new Exception(s"PubSubCreate first instance is null!!")
-        context.system.actorSelection(sender.path) ! Failure(ex)
-        throw ex
-      }
-      else {
-        pmessageCallbacks.put(channels,callback)
-        redisPubSub.psubscribe(channels)
-      }
+      createPubsub()
+      pmessageCallbacks.put(channels,callback)
+      redisPubSub.get.psubscribe(channels)
     }
 
     case UnSubscribe(channels) => {
-      if(redisPubSub == null) {
-        val ex = new Exception(s"PubSubCreate first instance is null!!")
-        context.system.actorSelection(sender.path) ! Failure(ex)
-        throw ex
-      }
-      else
-      {
-        messageCallbacks.remove(channels)
-        redisPubSub.subscribe(channels)
-      }
+      createPubsub()
+      messageCallbacks.remove(channels)
+      redisPubSub.get.subscribe(channels)
     }
     case PunSubscribe(channels) => {
-      if(redisPubSub == null) {
-        val ex = new Exception(s"PubSubCreate first instance is null!!")
-        context.system.actorSelection(sender.path) ! Failure(ex)
-        throw ex
-      }
-      else {
-        pmessageCallbacks.remove(channels)
-        redisPubSub.psubscribe(channels)
+      createPubsub()
+      pmessageCallbacks.remove(channels)
+      redisPubSub.get.psubscribe(channels)
+    }
+
+    case Publish(channel:String, message: String) =>{
+      redis match {
+        case Some(n) => {
+          n.publish(channel, message)
+        }
+        case err =>
+          context.system.actorSelection(sender.path) ! Failure(new Exception(s"connect error : ${err}"))
       }
     }
 
@@ -190,8 +176,23 @@ class RedisSupportActor extends Actor
       case err =>
         context.system.actorSelection(sender.path) ! Failure(new Exception(s"connect error : ${err}"))
     }
+
+    createPubsub()
   }
 
+  def createPubsub(): Option[RedisPubSub]= {
+    if(redisPubSub.getOrElse(null) == null) {
+      redisPubSub = Option(RedisPubSub(
+        Server,
+        Port,
+        channels = Seq(),
+        patterns = Seq(),
+        onMessage = onMessage,
+        onPMessage = onPMessage
+      ))
+    }
+    redisPubSub
+  }
   def onMessage(message: Message) {
     if(messageCallbacks.size <= 0)
       log.info(s"message received: ${message.data.utf8String}")

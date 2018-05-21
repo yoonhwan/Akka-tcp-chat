@@ -136,7 +136,7 @@ object StressMain extends App {
 
       
   val system = ActorSystem("StressMain")
-  val Port:Int = system.settings.config.getInt("akka.server.port")
+  val Port:Int = system.settings.config.getInt("akka.server.port-tcp")
   val Server:String = system.settings.config.getString("akka.server.client-hostname")
   
   val manager = system.actorOf(Props(new Manager(new InetSocketAddress(InetAddress.getByName(Server), Port))))

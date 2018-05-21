@@ -126,7 +126,8 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         exitChatRoom(self)
       }
 
-      supervisor ! DisconnectedClientHandlerActor(self)
+      context.actorSelection(supervisor.path) ! DisconnectedClientHandlerActor(self)
+
     }
 
     

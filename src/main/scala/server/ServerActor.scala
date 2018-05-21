@@ -8,7 +8,7 @@ import akka.io._
 
 class ServerActor(actorSystem: ActorSystem) extends Actor with ActorLogging{
     import ClientHandlerMessages._
-    val Port:Int = actorSystem.settings.config.getInt("akka.server.port")
+    val Port:Int = actorSystem.settings.config.getInt("akka.server.port-tcp")
     val Server:String = actorSystem.settings.config.getString("akka.server.hostname")
     val supervisor = context.actorOf(ClientHandlerSupervisor.props(), "client-handler-supervisor")
       
