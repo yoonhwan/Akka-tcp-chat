@@ -23,7 +23,7 @@ object ClientHandlerActor {
 
   case object GetClientInfomation
   case class ClientInfomation(userIdentify: String, remote: InetSocketAddress, roomName: String)
-
+  case object AliveChecker
 }
 
 class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: InetSocketAddress)
@@ -40,8 +40,13 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     var roomInfo:Tuple2[String,ActorRef] = Tuple2("",null)
     var support_chat_all_users:Boolean = false
     var _typeOfSerializer = SERIALIZER.ROW
+    var _lastReceiveTime: Long = System.currentTimeMillis
+    var _networkTimeout: Long = 5000
+    var _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"), self, AliveChecker)
 
-  override def preStart(): Unit = {
+
+
+    override def preStart(): Unit = {
       connection ! Register(self)//, keepOpenOnPeerClosed = true)
       context watch connection
       // sign death pact: this actor terminates when connection breaks
@@ -73,6 +78,12 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       case _: Unbound =>
         log.info("connection Unbound")
         stopProc()
+      case AliveChecker => {
+        if((System.currentTimeMillis - _lastReceiveTime) > (_networkTimeout + (_networkTimeout * 0.25) + 800)) {
+          log.info("connection timeout")
+          stopProc()
+        }
+      }
     }
     
     def writing(buf: ByteString): Receive = common orElse {   
@@ -104,6 +115,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         val (pkt, remainder) = getPacket(msg)
         // Do something with your packet
         pkt.foreach(f=>ProccessData(ReceiveData(f)))
+        _lastReceiveTime = System.currentTimeMillis
         context become writing(remainder) 
 
       case GetClientInfomation =>
@@ -114,10 +126,12 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
       case SendErrorMessage(error) =>
         send(s"[ERROR] ${error}", false)
+
     }
 
     override def postStop(): Unit = {
       super.postStop()
+      _aliveChecker.cancel()
       log.info(s"stoped actor user : $userIdentify from/to [$remote]")
     }
 
@@ -140,6 +154,8 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
       splitdata._1 match {
         case "quit" => //quit(clientActorName)
+        case "alive" => alive()
+        case "timeout" => timeoutSetting(splitdata._2)
         case "identify" => checkCommandExcute(clientActorName, splitdata._2, identify _)
         case "online" => online(clientActorName)
         case "chatroom" => chatroom()
@@ -175,6 +191,17 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       }else {
         (message, "")
       }
+    }
+
+    def alive(): Unit = {
+      send("aliveOk", serverMessage = true)
+    }
+
+    def timeoutSetting(timeout: String): Unit = {
+      _networkTimeout = timeout.toInt
+      _aliveChecker.cancel()
+      _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"), self, AliveChecker)
+      log.info(s"set timeoutSetting : $timeout")
     }
 
     def chat(message: String) = {

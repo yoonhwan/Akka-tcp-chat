@@ -72,23 +72,32 @@ class RoomSupervisor extends Actor with ActorLogging{
         sender ! "norooms (0 rooms total)."
       else {
         val map = ActiveRooms map{
-          case (key, value) if key != "globalRoom" => (key -> context.actorSelection(value.path) ? GetAllClientIdentifier)
+          case (key, value) => (key -> context.actorSelection(value.path) ? GetAllClientIdentifier)
         }
-        val fut = Util.sequenceMap(map)
 
-        fut onComplete{
-          case Success(m) => //log.info("future test : " + m)
-          case Failure(ex) => ex.printStackTrace()
+        if(map.contains("globalRoom"))
+          map.remove("globalRoom")
+
+        if (map.size > 0) {
+          val fut = Util.sequenceMap(map)
+
+          fut onComplete {
+            case Success(m) => //log.info("future test : " + m)
+            case Failure(ex) => ex.printStackTrace()
+          }
+          val result = Await result(fut, timeout)
+
+          var roomDataTotal = scala.collection.mutable.ListBuffer[String]()
+          result foreach (value => {
+            val data = value._2.asInstanceOf[String]
+            roomDataTotal += s"{roomName:${value._1},{userNames:[${data}]}"
+          })
+//          log.info(roomDataTotal.toList.reduce(_ + ", " + _) + " (" + roomDataTotal.size + " rooms total).")
+          sender ! roomDataTotal.toList.reduce(_ + ", " + _) + " (" + roomDataTotal.size + " rooms total)."
+        }else {
+          sender ! "norooms (0 rooms total)."
         }
-        val result = Await result (fut, timeout)
 
-        var roomDataTotal = scala.collection.mutable.ListBuffer[String]()
-        result foreach(value => {
-          val data = value._2.asInstanceOf[String]
-          roomDataTotal += s"{roomName:${value._1}:{userNames:[${data}]}"
-        })
-        // log.info(roomDataTotal.toList.reduce(_ + ", " + _) + " (" + roomDataTotal.size + " rooms total).")
-        sender ! roomDataTotal.toList.reduce(_ + ", " + _) + " (" + roomDataTotal.size + " rooms total)."
       }
     }
     case _=>

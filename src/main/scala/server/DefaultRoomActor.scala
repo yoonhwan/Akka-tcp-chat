@@ -139,8 +139,8 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
                             init = s.index
                             count += s.data.length
                             s.data foreach(value => {
-                                val data = value.asInstanceOf[String]
-                                userdataTotal += data
+                                val user = value.asInstanceOf[String]
+                                userdataTotal += user
                             })
                         }, 5 seconds)
                         if(init == 0)
@@ -148,6 +148,8 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
                     }
                 }
                 sender ! userdataTotal.toList.reduce(_ + ", " + _)
+
+                log.info(userdataTotal.toString())
             }
         }
 

@@ -69,23 +69,23 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             // log.info(obj + " : Terminated")
             self ! DisconnectedClientHandlerActor(obj)
         case DisconnectedClientHandlerActor(obj) => {
-            // log.info("DisconnectedClientHandlerActor : " + obj.path.name)
             context.stop(obj)
             globalRoom ! RemoveRouteeActor(obj, "")
             val actorname = getClientname(obj.path.name)
-            if(actorname.length >= 0) {
-                val redis = RedisSupportActor.redis.getOrElse(null)
-                if (redis != null) {
-                    self ! SendServerMessage(s"<${actorname}> has left the <global> chatroom. exit chat")
-                    val del1 = redis.del("active:user:actorname:" + obj.path.name)
-                    val del2 = redis.del("active:user:desirename:" + actorname)
-                    Await.result(for {
-                        s1 <- del1
-                        s2 <- del2
-                    } yield {
-                        s1
-                    }, 5 seconds)
-                }
+//            log.info("DisconnectedClientHandlerActor : " + obj.path.name + " : " + actorname + " : " + actorname.length)
+            if(actorname.length > 0)
+                self ! SendServerMessage(s"<${actorname}> has left the <global> chatroom. exit chat")
+
+            val redis = RedisSupportActor.redis.getOrElse(null)
+            if (redis != null) {
+                val del1 = redis.del("active:user:actorname:" + obj.path.name)
+                val del2 = redis.del("active:user:desirename:" + actorname)
+                Await.result(for {
+                    s1 <- del1
+                    s2 <- del2
+                } yield {
+                    s1
+                }, 5 seconds)
             }
         }
         case HasIdentifier(actorName, desireName) => {
