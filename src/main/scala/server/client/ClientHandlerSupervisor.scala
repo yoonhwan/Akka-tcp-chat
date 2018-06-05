@@ -1,7 +1,9 @@
-package chatapp.server
+package chatapp.server.client
+
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.pattern.ask
 import akka.util.Timeout
+import chatapp.server.RedisSupportActor
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Await, Future}
@@ -26,11 +28,11 @@ object ClientHandlerSupervisor {
 class ClientHandlerSupervisor extends Actor with ActorLogging{
     import ClientHandlerMessages._
     import ClientHandlerSupervisor._
-    import DefaultRoomActor._
     import akka.actor.OneForOneStrategy
     import akka.actor.SupervisorStrategy._
-    import server.RoomSupervisor
-    import server.RoomSupervisor._
+    import chatapp.server.room.DefaultRoomActor._
+    import chatapp.server.room.RoomSupervisor._
+    import chatapp.server.room._
 
     import scala.concurrent.duration._
     implicit val timeout = Timeout(5 seconds)
@@ -72,7 +74,7 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             context.stop(obj)
             globalRoom ! RemoveRouteeActor(obj, "")
             val actorname = getClientname(obj.path.name)
-//            log.info("DisconnectedClientHandlerActor : " + obj.path.name + " : " + actorname + " : " + actorname.length)
+            log.info("DisconnectedClientHandlerActor : " + obj.path.name + " : " + actorname + " : " + actorname.length)
             if(actorname.length > 0)
                 self ! SendServerMessage(s"<${actorname}> has left the <global> chatroom. exit chat")
 
@@ -89,7 +91,7 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             }
         }
         case HasIdentifier(actorName, desireName) => {
-            // log.info("HasIdentifier : " + actorName)
+//             log.info("HasIdentifier : " + desireName)
             val localsender = sender()
             var hasKey: Boolean = false
 
@@ -100,7 +102,10 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
                 Await.result(for {s <- get} yield {
                     val result = s.getOrElse(null)
                     if (result != null)
-                        hasKey = true
+                        {
+                            hasKey = true
+                            log.info("HasIdentifier error: " + result)
+                        }
                     else
                         ""
                 }, 5 seconds)
@@ -287,8 +292,10 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         {
             val desirename = getClientname(actor.path.name)
             room._2 ! RemoveRouteeActor(actor,desirename)
-            
-            if (count-1 <= 0)
+
+
+            log.info(s"Exit user Remaining user count : $count")
+            if (count-1 <= 1)
               roomSupervisor ! DestroyDefaultRoom(room)
         }
     }

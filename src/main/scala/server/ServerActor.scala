@@ -7,7 +7,10 @@ import akka.io.Tcp._
 import akka.io._
 
 class ServerActor(actorSystem: ActorSystem) extends Actor with ActorLogging{
-    import ClientHandlerMessages._
+    import client.ClientHandlerMessages._
+    import client.ClientHandlerSupervisor
+    import client.ClientHandlerActor
+
     val Port:Int = actorSystem.settings.config.getInt("akka.server.port-tcp")
     val Server:String = actorSystem.settings.config.getString("akka.server.hostname")
     val supervisor = context.actorOf(ClientHandlerSupervisor.props(), "client-handler-supervisor")
@@ -47,7 +50,7 @@ class ServerActor(actorSystem: ActorSystem) extends Actor with ActorLogging{
 class ServerActorUDP(actorSystem: ActorSystem) extends  Actor with ActorLogging{
   val Port:Int = actorSystem.settings.config.getInt("akka.server.port-udp")
   val Server:String = actorSystem.settings.config.getString("akka.server.hostname")
-  val supervisor = context.actorOf(ClientHandlerSupervisor.props(), "client-handler-supervisor")
+//  val supervisor = context.actorOf(client.ClientHandlerSupervisor.props(), "client-handler-supervisor")
 
   IO(Udp)(actorSystem) ! Udp.Bind(self, new InetSocketAddress(InetAddress.getByName(Server), Port))
   def receive = {

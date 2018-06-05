@@ -1,4 +1,5 @@
-package chatapp.server
+package chatapp.server.room
+
 import akka.actor.{Actor, ActorRef, PoisonPill, Props, Terminated}
 import akka.routing._
 

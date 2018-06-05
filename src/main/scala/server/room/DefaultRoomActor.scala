@@ -1,14 +1,22 @@
-package chatapp.server
-import scala.util.{Failure, Success}
+package chatapp.server.room
+
 import akka.actor.{Actor, ActorLogging, ActorPath, ActorRef, Props}
 import akka.util.Timeout
+import chatapp.server.{RedisSupportActor, client}
 
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Failure, Success}
 
 object DefaultRoomActor   {
-    def props(roomName:String): Props = Props(classOf[DefaultRoomActor], roomName)
+//    def props(roomName:String): Props = Props(classOf[DefaultRoomActor], roomName)
+    def props(roomName:String): Props = {
+        if(roomName == "globalRoom")
+            Props(classOf[DefaultRoomActor], roomName)
+        else
+            Props(classOf[FirstGameRoomActor], roomName)
+    }
 
     case class AddRouteeActor(actor: ActorRef, name: String)
     case class RemoveRouteeActor(actor: ActorRef, name: String)
@@ -16,9 +24,9 @@ object DefaultRoomActor   {
     case object DestroyDefaultRoomActor
 }
 class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
-    import ClientHandlerMessages._
-    import ClientHandlerSupervisor._
     import DefaultRoomActor._
+    import client.ClientHandlerMessages._
+    import client.ClientHandlerSupervisor._
     val timeout = 5 seconds
     implicit val t = Timeout(timeout)
     val remoteConfig = context.system.settings.config.getConfig("akka").getConfig("remote").getConfig("netty.tcp")
@@ -125,36 +133,50 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
             }
 
         case GetAllClientIdentifier => {
-            if (ActiveClients.isEmpty) 
+            var init = 0
+            var count = 0
+            var loop = true
+            var userdataTotal = scala.collection.mutable.ListBuffer[String]()
+            if(redis != null) {
+                while(loop) {
+                    val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:*"))
+                    Await.result(for {s <- keys} yield {
+                        init = s.index
+                        count += s.data.length
+                        s.data foreach(value => {
+                            val user = value.asInstanceOf[String]
+                            userdataTotal += user
+                        })
+                    }, 5 seconds)
+                    if(init == 0)
+                        loop = false
+                }
+            }
+
+            if(count == 0)
                 sender ! "nobody (0 users total)."
             else {
-                var init = 0
-                var count = 0
-                var loop = true
-                var userdataTotal = scala.collection.mutable.ListBuffer[String]()
-                if(redis != null) {
-                    while(loop) {
-                        val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:*"))
-                        Await.result(for {s <- keys} yield {
-                            init = s.index
-                            count += s.data.length
-                            s.data foreach(value => {
-                                val user = value.asInstanceOf[String]
-                                userdataTotal += user
-                            })
-                        }, 5 seconds)
-                        if(init == 0)
-                            loop = false
-                    }
-                }
                 sender ! userdataTotal.toList.reduce(_ + ", " + _)
-
-                log.info(userdataTotal.toString())
+//                log.info(userdataTotal.toString())
             }
         }
 
         case GetRoomUserCount => {
-            sender() ! ActiveClients.size
+            var init = 0
+            var count = 0
+            var loop = true
+            if(redis != null) {
+                while(loop) {
+                    val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:*"))
+                    Await.result(for {s <- keys} yield {
+                        init = s.index
+                        count += s.data.length
+                    }, 5 seconds)
+                    if(init == 0)
+                        loop = false
+                }
+            }
+            sender() ! count
         }
 
         case DestroyDefaultRoomActor => {
@@ -166,10 +188,12 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
 
             if(redis != null)
             {
-                val del = redis.del(s"active:room:${roomName}")
+                val del1 = redis.del(s"active:room:${roomName}:None")
+                val del2 = redis.del(s"active:room:${roomName}")
                 val r :Future[Long] = for {
-                    s1 <- del
-                } yield {s1}
+                    s1 <- del1
+                    s2 <- del2
+                } yield {s2}
                 Await.result(r, 5 seconds)
 
                 RedisSupportActor.inst ! RedisSupportActor.PunSubscribe(s"active:room:${roomName}:*")

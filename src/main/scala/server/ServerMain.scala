@@ -11,8 +11,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
   * Created by yoonhwan on 02-4-2018
   */
 object ServerMain extends App {
-  import ClientHandlerMessages._
-  import ClientHandlerSupervisor._
+  import client.ClientHandlerMessages._
+  import client.ClientHandlerSupervisor._
 
   val system = ActorSystem("ServerMain")
   val future = Future{

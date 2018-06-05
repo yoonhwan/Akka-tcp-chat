@@ -1,12 +1,11 @@
-package server
+package chatapp.server.room
 
 import akka.actor.SupervisorStrategy.{Restart, Resume, Stop}
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props}
 import akka.pattern.ask
 import akka.util.Timeout
-import chatapp.server.ClientHandlerSupervisor.GetAllClientIdentifier
-import chatapp.server.DefaultRoomActor.DestroyDefaultRoomActor
-import chatapp.server.{DefaultRoomActor, Util}
+import chatapp.server.Util
+import chatapp.server.client.ClientHandlerSupervisor.GetAllClientIdentifier
 
 import scala.collection.mutable.HashMap
 import scala.concurrent.Await
@@ -29,7 +28,7 @@ class RoomSupervisor extends Actor with ActorLogging{
   val timeout = 5 seconds
   implicit val t = Timeout(timeout)
   import RoomSupervisor._
-
+  import DefaultRoomActor._
   val ActiveRooms = HashMap.empty[String, ActorRef]
 
   override val supervisorStrategy =
@@ -42,13 +41,15 @@ class RoomSupervisor extends Actor with ActorLogging{
 
   override def receive: Receive = {
     case CreateDefaultRoom(actor, roomName) =>{
+
       ActiveRooms += (roomName -> context.actorOf(DefaultRoomActor.props(roomName), roomName))
       val room = getActiveRoom(roomName)
       sender ! room
     }
 
     case DestroyDefaultRoom(roomInfo) => {
-      roomInfo._2 ! DestroyDefaultRoomActor
+      val future = roomInfo._2 ? DestroyDefaultRoomActor
+      Await.result(future, 5 seconds)
       context stop roomInfo._2
       ActiveRooms -= roomInfo._1
     }
@@ -56,7 +57,8 @@ class RoomSupervisor extends Actor with ActorLogging{
     case ClearAllDefaultRoom => {
       ActiveRooms.foreach(f => {
         val room = f._2
-        context.actorSelection(room.path) ! DestroyDefaultRoomActor
+        val future = context.actorSelection(room.path) ? DestroyDefaultRoomActor
+        Await.result(future, 5 seconds)
         context stop room
       })
       ActiveRooms.clear

@@ -1,10 +1,10 @@
 package chatapp.server
 
-import scala.concurrent.duration._
-import akka.routing._
 import akka.actor._
+import akka.routing._
+import akka.testkit.{TestKit, TestProbe}
+import chatapp.server.room.DynamicRouteeSizer
 import org.scalatest._
-import akka.testkit.{ TestProbe, TestKit }
 
 class TestActor(actor: ActorRef) extends Actor{
 

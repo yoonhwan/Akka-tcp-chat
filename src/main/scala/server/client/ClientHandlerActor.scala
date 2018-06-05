@@ -1,5 +1,5 @@
 
-package chatapp.server
+package chatapp.server.client
 
 import java.net.InetSocketAddress
 import java.nio.ByteOrder
@@ -9,21 +9,24 @@ import akka.io.Tcp
 import akka.pattern.ask
 import akka.util.{ByteString, CompactByteString, Timeout}
 import chatapp.client.SERIALIZER
-import server.RoomSupervisor.GetAllChatRoomInfo
+import chatapp.server._
+import chatapp.server.room.RoomSupervisor.GetAllChatRoomInfo
+import chatapp.server.room._
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
         
 object ClientHandlerActor {
 
+//  def props(supervisor: ActorRef, connection: ActorRef, remote: InetSocketAddress): Props =
+//    Props(classOf[ClientHandlerActor], supervisor, connection, remote)
   def props(supervisor: ActorRef, connection: ActorRef, remote: InetSocketAddress): Props =
-    Props(classOf[ClientHandlerActor], supervisor, connection, remote)
+    Props(classOf[GameClientActor], supervisor, connection, remote)
 
   case object GetClientInfomation
   case class ClientInfomation(userIdentify: String, remote: InetSocketAddress, roomName: String)
-  case object AliveChecker
 }
 
 class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: InetSocketAddress)
@@ -33,8 +36,10 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     import ClientHandlerMessages._
     import ClientHandlerSupervisor._
     import Tcp._
-    
-    implicit val timeout = Timeout(5 seconds)
+
+    val _timeOut = 5 seconds
+    implicit val tt = Timeout(_timeOut)
+
     val CommandCharacter = '|'
     var userIdentify = ""
     var roomInfo:Tuple2[String,ActorRef] = Tuple2("",null)
@@ -42,7 +47,8 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     var _typeOfSerializer = SERIALIZER.ROW
     var _lastReceiveTime: Long = System.currentTimeMillis
     var _networkTimeout: Long = 5000
-    var _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"), self, AliveChecker)
+//    var _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"), self, AliveChecker)
+    var _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"))(AliveChecker)
 
 
 
@@ -78,12 +84,6 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       case _: Unbound =>
         log.info("connection Unbound")
         stopProc()
-      case AliveChecker => {
-        if((System.currentTimeMillis - _lastReceiveTime) > (_networkTimeout + (_networkTimeout * 0.25) + 800)) {
-          log.info("connection timeout")
-          stopProc()
-        }
-      }
     }
     
     def writing(buf: ByteString): Receive = common orElse {   
@@ -111,11 +111,11 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 //        val serial = temp.iterator.getByte.toInt
 //        log.info(s"recv message : ${data.utf8String.length} header : ${header} type : ${serial} data = ${data.utf8String} byteData = ${data}")
 
+        _lastReceiveTime = System.currentTimeMillis
         val msg = buf ++ data
         val (pkt, remainder) = getPacket(msg)
         // Do something with your packet
         pkt.foreach(f=>ProccessData(ReceiveData(f)))
-        _lastReceiveTime = System.currentTimeMillis
         context become writing(remainder) 
 
       case GetClientInfomation =>
@@ -136,7 +136,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     def stopProc(): Unit = {
-      if(roomInfo._1.length>0) {
+      if(roomInfo._2 != null) {
         exitChatRoom(self)
       }
 
@@ -144,8 +144,13 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     }
 
-    
-    def ProccessData(data: ByteString): Unit = {
+    def AliveChecker() {
+      if((System.currentTimeMillis - _lastReceiveTime) > (_networkTimeout + (_networkTimeout * 0.25) + 800)) {
+        log.info(s"connection timeout dur:${(System.currentTimeMillis - _lastReceiveTime)} timeout:${_networkTimeout} real:${(_networkTimeout + (_networkTimeout * 0.25) + 800)}")
+        stopProc()
+      }
+    }
+    def ProccessData(data: ByteString): Boolean = {
 //      log.info(s"ProccessData 1 :${data}")
 
       var text = data.utf8String
@@ -153,17 +158,17 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       val splitdata = getCommand(text)
 
       splitdata._1 match {
-        case "quit" => //quit(clientActorName)
-        case "alive" => alive()
-        case "timeout" => timeoutSetting(splitdata._2)
-        case "identify" => checkCommandExcute(clientActorName, splitdata._2, identify _)
-        case "online" => online(clientActorName)
-        case "chatroom" => chatroom()
-        case "create" => checkCommandExcute(self, splitdata._2, createChatRoom _)
-        case "join" => checkCommandExcute(self, splitdata._2, joinChatRoom _)
-        case "exit" => exitChatRoom(self)
-        case "chat" => chat(splitdata._2)
-        case _ => send("Unknown command! if you need show all command. type the command <help>.", serverMessage = true)
+        case "quit" => {true}//quit(clientActorName)
+        case "alive" => alive();true;
+        case "timeout" => timeoutSetting(splitdata._2);true;
+        case "identify" => checkCommandExcute(clientActorName, splitdata._2, identify _);true;
+        case "online" => online(clientActorName);true;
+        case "chatroom" => chatroom();true;
+        case "create" => checkCommandExcute(self, splitdata._2, createChatRoom _);true;
+        case "join" => checkCommandExcute(self, splitdata._2, joinChatRoom _);true;
+        case "exit" => exitChatRoom(self);true;
+        case "chat" => chat(splitdata._2);true;
+        case _ => send("Unknown command! if you need show all command. type the command <help>.", serverMessage = true);false;
       }
     }
 
@@ -200,7 +205,8 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     def timeoutSetting(timeout: String): Unit = {
       _networkTimeout = timeout.toInt
       _aliveChecker.cancel()
-      _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"), self, AliveChecker)
+//      _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"), self, AliveChecker)
+      _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"))(AliveChecker)
       log.info(s"set timeoutSetting : $timeout")
     }
 
@@ -304,17 +310,22 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
 
     def exitChatRoom(actor:ActorRef):Unit = {
 
-      if(roomInfo._1.length <= 0) {
+      if(roomInfo._2 == null) {
         send(s"Does not joined any room. doesn't joined any rooms", serverMessage = true)
       }else {
-        supervisor ? ExitChatRoom(actor, roomInfo._1) onComplete {
+        val future :Future[Any] = supervisor ? ExitChatRoom(actor, roomInfo._1)
+
+        future onComplete {
           case Success(result) => {
             send(s"Successfully exit the chatroom($roomInfo._1).", serverMessage = true)
             roomInfo = Tuple2("",null)
           }
           case Failure(t) => t.printStackTrace
         }
+
+        Await.result(future, _timeOut)
       }
+
     }
 
     def send(message: String, serverMessage: Boolean = false) = {

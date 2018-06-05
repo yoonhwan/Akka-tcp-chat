@@ -1,4 +1,4 @@
-package chatapp.server
+package chatapp.server.client
 
 import chatapp.client.SERIALIZER
 
