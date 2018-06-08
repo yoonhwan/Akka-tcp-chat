@@ -76,6 +76,13 @@ class FirstGameRoomActor(roomName:String) extends DefaultRoomActor(roomName){
       _gameStartTimer.cancel()
     if(_gameRoomStateTimer!=null)
       _gameRoomStateTimer.cancel()
+
+    if(_exitCheckSchduler.size > 0) {
+      _exitCheckSchduler.foreach(f => {
+        f._2.cancel()
+      })
+    }
+    
     super.postStop()
   }
 
@@ -208,7 +215,7 @@ class FirstGameRoomActor(roomName:String) extends DefaultRoomActor(roomName){
         }, timeout)
 
         val _schedule = context.system.scheduler.schedule(FiniteDuration(_userExitWaitTime, java.util.concurrent.TimeUnit.SECONDS), FiniteDuration(0, java.util.concurrent.TimeUnit.SECONDS))({
-          val result = Await.result(for {
+          for {
             a<-redis.get(s"active:room:${roomName}:userlist:${name}")
           }yield{
             log.info(s"FirstGameRoomActor::RemoveRouteeActor wait resume")
@@ -219,7 +226,7 @@ class FirstGameRoomActor(roomName:String) extends DefaultRoomActor(roomName){
               log.info(s"FirstGameRoomActor::RemoveRouteeActor wait resume send exit.")
             }
             _exitCheckSchduler.get(name).get.cancel()
-          }, timeout)
+          }
         });
         _exitCheckSchduler += (name -> _schedule)
 
