@@ -30,9 +30,11 @@ object RedisSupportActor {
   case class PunSubscribe(channels : String*)
   case class Publish(channel:String, message: String)
 
+
   case class RedisFunction1()
   case class RedisFunction2()
   case class RedisFunction3(operations: (TransactionBuilder) => Unit)
+  case class HasKey(key:String)
 
   var redis : Option[RedisClientMasterSlaves] = None
   var redisPubSub: Option[RedisPubSub] = None
@@ -145,8 +147,12 @@ class RedisSupportActor extends Actor
     case Connected(host, host2) => {
       log.info(s"Connected : ${host}")
     }
-    case error =>{
-      log.error(s"error : ${error}")
+
+    case HasKey(key) => {
+      sender ! HasKey(key)
+    }
+    case err =>{
+      log.error(s"error : ${err}")
     }
   }
 
@@ -213,6 +219,37 @@ class RedisSupportActor extends Actor
         if (f._1.compare(pmessage.patternMatched) == 0)
           f._2(pmessage.data.utf8String)
       })
+    }
+  }
+
+  def HasKey(key : String):Boolean = {
+    redis match {
+      case Some(redis) => {
+        var init = 0
+        var count = 0
+        var loop = true
+
+        while(loop) {
+          val keys = redis.scan(init,Option(100),Option(key))
+          Await.result(
+            for {
+              s <- keys
+            } yield {
+              init = s.index
+              count += s.data.length
+            }, timeOut)
+
+          if(init == 0)
+            loop = false
+        }
+
+        if(count == 0)
+          false
+        else
+          true
+      }
+      case None =>
+        false
     }
   }
 

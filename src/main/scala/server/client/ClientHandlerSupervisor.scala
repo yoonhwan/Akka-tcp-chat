@@ -7,7 +7,6 @@ import chatapp.server.RedisSupportActor
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Await, Future}
-import scala.util.{Failure, Success}
 
 object ClientHandlerSupervisor {
     def props(): Props = Props(classOf[ClientHandlerSupervisor])
@@ -47,6 +46,8 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
     }
     override def postStop(): Unit = {
         context.stop(globalRoom)
+
+        super.postStop()
     }
 
     override val supervisorStrategy =
@@ -221,16 +222,11 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
             }
             else if(room._2 != null)
             {
-                room._2 ? GetRoomUserCount onComplete {
-                    case Success(result) => {
-                        val count = result.asInstanceOf[Int]
-                        removeActiveRoomAndDestroy(actor, room, count)
-                        localsender ! s"Successfully exit the chatroom($roomName) remain user count : ${count-1}."
-                        if(actorname.length > 0)
-                            self ! SendServerMessage(s"<${actorname}> has left the <$roomName> chatroom. exit chat")
-                    }
-                    case Failure(t) => localsender ! akka.actor.Status.Failure(t)
-                }
+              val count = removeActiveRoomAndDestroy(actor, room)
+
+              localsender ! s"Successfully exit the chatroom($roomName) remain user count : ${count}."
+              if(actorname.length > 0)
+                self ! SendServerMessage(s"<${actorname}> has left the <$roomName> chatroom. exit chat")
             }else   {
                 localsender ! akka.actor.Status.Failure(new Exception("exitchatroom error"))
                 context.actorSelection(actor.path.name)  ! SendErrorMessage("exitchatroom error")
@@ -287,16 +283,21 @@ class ClientHandlerSupervisor extends Actor with ActorLogging{
         roomInfo
     }
 
-    def removeActiveRoomAndDestroy(actor:ActorRef, room:Tuple2[String,ActorRef], count:Int) = {
+    def removeActiveRoomAndDestroy(actor:ActorRef, room:Tuple2[String,ActorRef]) = {
         if(room._2 != null)
         {
             val desirename = getClientname(actor.path.name)
             room._2 ! RemoveRouteeActor(actor,desirename)
 
+            val future = room._2 ? GetRoomUserCount
+            val result = Await.result(future,timeOut)
+            val count = result.asInstanceOf[Int]
 
             log.info(s"Exit user Remaining user count : $count")
-            if (count-1 <= 1)
+            if (count == 0)
               roomSupervisor ! DestroyDefaultRoom(room)
+
+            count
         }
     }
     // override default to kill all children during restart

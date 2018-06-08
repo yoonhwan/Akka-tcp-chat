@@ -1,7 +1,7 @@
 package chatapp.server.room
 
 import akka.actor.SupervisorStrategy.{Restart, Resume, Stop}
-import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, PoisonPill, Props}
 import akka.pattern.ask
 import akka.util.Timeout
 import chatapp.server.Util
@@ -27,10 +27,11 @@ object RoomSupervisor {
 class RoomSupervisor extends Actor with ActorLogging{
   val timeout = 5 seconds
   implicit val t = Timeout(timeout)
-  import RoomSupervisor._
   import DefaultRoomActor._
+  import RoomSupervisor._
   val ActiveRooms = HashMap.empty[String, ActorRef]
 
+  val destroyActorId = 9999
   override val supervisorStrategy =
     OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
       case _: ArithmeticException      ⇒ Resume
@@ -39,6 +40,18 @@ class RoomSupervisor extends Actor with ActorLogging{
       case _: Exception                ⇒ Resume
     }
 
+  override def postStop(): Unit = {
+
+
+    ActiveRooms.foreach(f => {
+      val room = f._2
+      context.actorSelection(room.path) ! DestroyDefaultRoomActor
+      room ! PoisonPill
+    })
+    ActiveRooms.clear
+
+    super.postStop()
+  }
   override def receive: Receive = {
     case CreateDefaultRoom(actor, roomName) =>{
 
@@ -48,18 +61,16 @@ class RoomSupervisor extends Actor with ActorLogging{
     }
 
     case DestroyDefaultRoom(roomInfo) => {
-      val future = roomInfo._2 ? DestroyDefaultRoomActor
-      Await.result(future, 5 seconds)
-      context stop roomInfo._2
+      val future = roomInfo._2 ! DestroyDefaultRoomActor
+      roomInfo._2 ! PoisonPill
       ActiveRooms -= roomInfo._1
     }
 
     case ClearAllDefaultRoom => {
       ActiveRooms.foreach(f => {
         val room = f._2
-        val future = context.actorSelection(room.path) ? DestroyDefaultRoomActor
-        Await.result(future, 5 seconds)
-        context stop room
+        context.actorSelection(room.path) ! DestroyDefaultRoomActor
+        room ! PoisonPill
       })
       ActiveRooms.clear
     }

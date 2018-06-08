@@ -27,6 +27,7 @@ object ClientHandlerActor {
 
   case object GetClientInfomation
   case class ClientInfomation(userIdentify: String, remote: InetSocketAddress, roomName: String)
+  case object ClientJoinedRoom
 }
 
 class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: InetSocketAddress)
@@ -49,8 +50,6 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     var _networkTimeout: Long = 5000
 //    var _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"), self, AliveChecker)
     var _aliveChecker = context.system.scheduler.schedule(Duration(0,"seconds"), Duration(_networkTimeout,"millis"))(AliveChecker)
-
-
 
     override def preStart(): Unit = {
       connection ! Register(self)//, keepOpenOnPeerClosed = true)
@@ -96,7 +95,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       }
       case SendRoomClientMessage(serializer, roomName, clientActorName, message) => {
         if(roomName.length <= 0)
-          sendFromRoom("Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", true, serializer)
+          sendFromRoom("1Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", true, serializer)
         else
           if(clientActorName != userIdentify)
 //            send(s"from <$clientActorName> user message at room <$roomName> : $message", false)
@@ -130,9 +129,9 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
     }
 
     override def postStop(): Unit = {
-      super.postStop()
       _aliveChecker.cancel()
       log.info(s"stoped actor user : $userIdentify from/to [$remote]")
+      super.postStop()
     }
 
     def stopProc(): Unit = {
@@ -222,7 +221,7 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
             roomInfo._2 ! SendRoomClientMessage(_typeOfSerializer, roomInfo._1, userIdentify, message)
         }else {
           if(roomInfo._1.length <= 0)
-            send("Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", serverMessage = true)
+            send("2Please create or join room yourself using <create or join|[name]> Also you can show all list rooms <chatroom>", serverMessage = true)
           else
             roomInfo._2 ! SendRoomClientMessage(_typeOfSerializer, roomInfo._1, userIdentify, message)
         }
@@ -286,6 +285,9 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
         supervisor ? MakeChatRoom(actor, name) onComplete {
           case Success(result) => {
             roomInfo = result.asInstanceOf[Tuple2[String, ActorRef]]
+
+            log.info(s"createChatRoom")
+            self ! ClientJoinedRoom
             if(roomInfo._1.length > 0){
               send(s"Successfully create the chatroom($roomInfo._1).", serverMessage = true)
             }
@@ -300,6 +302,9 @@ class ClientHandlerActor(supervisor: ActorRef, connection: ActorRef, remote: Ine
       supervisor ? JoinChatRoom(actor, name) onComplete {
         case Success(result) => {
           roomInfo = result.asInstanceOf[Tuple2[String, ActorRef]]
+
+          log.info(s"joinChatRoom")
+          self ! ClientJoinedRoom
           if(roomInfo._1.length > 0){
             send(s"Successfully join the chatroom($roomInfo._1).", serverMessage = true)
           }

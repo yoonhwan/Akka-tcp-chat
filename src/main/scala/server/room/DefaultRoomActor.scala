@@ -57,6 +57,11 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
         ActiveClients.clear
     }
 
+    override def postStop(): Unit = {
+        log.info(s"DefaultRoomActor postStop :: ${roomName}")
+        super.postStop()
+    }
+
     def receive :Receive = {
         case AddRouteeActor(actor, name) => {
             ActiveClients += (actor.path -> actor)
@@ -67,7 +72,7 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
 
             if(redis != null)
             {
-                val set = redis.set(s"active:room:${roomName}:${n}", "")
+                val set = redis.set(s"active:room:${roomName}:userlist:${n}", "")
                 val r :Future[Boolean] = for {
                     s1 <- set
                 } yield {s1}
@@ -111,7 +116,7 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
                 })
 
                 val data = s"${actorPath }|${serializer.id}|${clientActorName}|${message}"
-                RedisSupportActor.inst ! RedisSupportActor.Publish(s"active:room:${roomName}:${clientActorName}", data)
+                RedisSupportActor.inst ! RedisSupportActor.Publish(s"active:room:${roomName}:userlist:${clientActorName}", data)
             } catch {
                 case e:Exception => e.printStackTrace
             }
@@ -123,13 +128,29 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
             var n = name
             if(n.length <= 0)
                 n = actor.path.toStringWithoutAddress
-            if(redis != null)
-            {
-                val del = redis.del(s"active:room:${roomName}:${n}")
-                val r :Future[Long] = for {
-                    s1 <- del
-                } yield {s1}
-                Await.result(r, 5 seconds)
+            var init = 0
+            var count = 0
+            var loop = true
+            if(redis != null) {
+              while(loop) {
+                val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:userstate:${n}:*"))
+                Await.result(for {s <- keys} yield {
+                  init = s.index
+                  count += s.data.length
+                  s.data foreach(value => {
+                    val userstate = value.asInstanceOf[String]
+
+                    val state = Await.result(
+                      redis.del(s"${userstate}")
+                      , timeout)
+                  })
+                }, timeout)
+                if(init == 0)
+                  loop = false
+              }
+              Await.result(for {
+                s1 <- redis.del(s"active:room:${roomName}:userlist:${n}")
+              } yield {s1}, timeout)
             }
 
         case GetAllClientIdentifier => {
@@ -139,7 +160,7 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
             var userdataTotal = scala.collection.mutable.ListBuffer[String]()
             if(redis != null) {
                 while(loop) {
-                    val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:*"))
+                    val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:userlist:*"))
                     Await.result(for {s <- keys} yield {
                         init = s.index
                         count += s.data.length
@@ -167,7 +188,7 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
             var loop = true
             if(redis != null) {
                 while(loop) {
-                    val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:*"))
+                    val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:userlist:*"))
                     Await.result(for {s <- keys} yield {
                         init = s.index
                         count += s.data.length
@@ -180,23 +201,67 @@ class DefaultRoomActor(roomName:String) extends Actor with ActorLogging{
         }
 
         case DestroyDefaultRoomActor => {
+            log.info(s"DestroyDefaultRoomActor :: ${roomName}")
             ActiveClients.foreach(f => {
                 context.actorSelection(f._1) ! DestroyDefaultRoomActor
             })
             ActiveClients.clear
-            sender ! ""
 
             if(redis != null)
             {
-                val del1 = redis.del(s"active:room:${roomName}:None")
-                val del2 = redis.del(s"active:room:${roomName}")
-                val r :Future[Long] = for {
-                    s1 <- del1
-                    s2 <- del2
-                } yield {s2}
-                Await.result(r, 5 seconds)
+                var init = 0
+                var count = 0
+                var loop = true
+                if(redis != null) {
+                    while(loop) {
+                        val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:*:*:*"))
+                        Await.result(for {s <- keys} yield {
+                            init = s.index
+                            count += s.data.length
+                            s.data foreach(value => {
+                                val userstate = value.asInstanceOf[String]
 
-                RedisSupportActor.inst ! RedisSupportActor.PunSubscribe(s"active:room:${roomName}:*")
+                                val state = Await.result(
+                                    redis.del(s"${userstate}")
+                                    , timeout)
+                            })
+                        }, timeout)
+                        if(init == 0)
+                            loop = false
+                    }
+
+                    init = 0
+                    count = 0
+                    loop = true
+                    while(loop) {
+                      val keys = redis.scan(init,Option(100),Option(s"active:room:${roomName}:userlist:*"))
+                      Await.result(for {s <- keys} yield {
+                        init = s.index
+                        count += s.data.length
+                        s.data foreach(value => {
+                          val userstate = value.asInstanceOf[String]
+
+                          val state = Await.result(
+                            redis.del(s"${userstate}")
+                            , timeout)
+                        })
+                      }, timeout)
+                      if(init == 0)
+                        loop = false
+                    }
+
+                }
+//                val del1 = redis.del(s"active:room:${roomName}:None")
+//                val del2 = redis.del(s"active:room:${roomName}")
+//                val r :Future[Long] = for {
+//                    s1 <- del1
+//                    s2 <- del2
+//                } yield {s2}
+//                Await.result(r, 5 seconds)
+
+                log.info(s"DestroyDefaultRoomActor :: ${roomName} finish")
+                sender ! ""
+                RedisSupportActor.inst ! RedisSupportActor.PunSubscribe(s"active:room:${roomName}:userlist:*")
             }
         }
     }
