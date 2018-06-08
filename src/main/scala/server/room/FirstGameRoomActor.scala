@@ -82,7 +82,7 @@ class FirstGameRoomActor(roomName:String) extends DefaultRoomActor(roomName){
         f._2.cancel()
       })
     }
-    
+
     super.postStop()
   }
 
@@ -214,19 +214,24 @@ class FirstGameRoomActor(roomName:String) extends DefaultRoomActor(roomName){
           a
         }, timeout)
 
-        val _schedule = context.system.scheduler.schedule(FiniteDuration(_userExitWaitTime, java.util.concurrent.TimeUnit.SECONDS), FiniteDuration(0, java.util.concurrent.TimeUnit.SECONDS))({
+        if(_exitCheckSchduler.exists( key=> key._1 == name)){
+          _exitCheckSchduler.get(name).get.cancel()
+          _exitCheckSchduler.remove(name)
+        }
+
+        val _schedule = context.system.scheduler.schedule(FiniteDuration(_userExitWaitTime, java.util.concurrent.TimeUnit.SECONDS), FiniteDuration(_userExitWaitTime, java.util.concurrent.TimeUnit.SECONDS))({
           for {
             a<-redis.get(s"active:room:${roomName}:userlist:${name}")
           }yield{
-            log.info(s"FirstGameRoomActor::RemoveRouteeActor wait resume")
+            log.info(s"FirstGameRoomActor::RemoveRouteeActor wait resume <${name}>")
             val exist = a getOrElse null
             if (exist == null){
               ActiveClients -= actor.path
               self ! SendServerMessage(s"<${name}> has left the <$roomName> chatroom. exit chat")
-              log.info(s"FirstGameRoomActor::RemoveRouteeActor wait resume send exit.")
+              log.info(s"FirstGameRoomActor::RemoveRouteeActor wait resume <${name}> send exit.")
             }
-            _exitCheckSchduler.get(name).get.cancel()
           }
+          _exitCheckSchduler.get(name).get.cancel()
         });
         _exitCheckSchduler += (name -> _schedule)
 
